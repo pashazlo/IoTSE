@@ -106,3 +106,4 @@ void spi_bus_unlock(void)
 
     xSemaphoreGive(s_spi_mutex);
 }
+
