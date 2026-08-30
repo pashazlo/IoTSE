@@ -292,3 +292,4 @@ esp_err_t display_fill_color(uint16_t color)
     }
     return err;
 }
+
