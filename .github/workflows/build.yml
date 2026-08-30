@@ -16,11 +16,14 @@ jobs:
           path: '.'
           command: idf.py build
 
-      - name: Upload firmware artifact
+      - name: Merge binaries
+        run: |
+          cd build
+          idf.py merge-bin
+        # Либо можно выполнить команду из корня: idf.py merge-bin
+
+      - name: Upload merged firmware artifact
         uses: actions/upload-artifact@v4
         with:
-          name: firmware
-          path: |
-            build/*.bin
-            build/*.elf
-            build/*.map
+          name: firmware_merged
+          path: build/merged-binary.bin
