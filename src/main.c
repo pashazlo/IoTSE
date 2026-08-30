@@ -1,18 +1,14 @@
-#include <stdio.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_system.h"
-#include "esp_psram.h"
+#include "spi_bus.h"
+#include "display.h"
 
 void app_main(void)
 {
-    printf("\n\n=== RF Tool starting ===\n");
-    printf("CPU: %s\n", CONFIG_IDF_TARGET);
-    printf("Free heap: %lu bytes\n", esp_get_free_heap_size());
-    printf("PSRAM size: %d bytes\n", esp_psram_get_size());
+    ESP_ERROR_CHECK(spi_bus_shared_init());
+    ESP_ERROR_CHECK(display_init());
+
+    display_fill_color(0xF800);  // красный экран для проверки
 
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(2000));
-        printf("Tick... free heap: %lu\n", esp_get_free_heap_size());
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
