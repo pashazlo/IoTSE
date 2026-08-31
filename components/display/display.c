@@ -27,7 +27,7 @@ static const char *TAG = "display";
 
 // Color and orientation configuration
 // If colors look inverted on your panel, flip this to false and reflash.
-#define DISP_INVERT_COLOR   true
+#define DISP_INVERT_COLOR   false
 
 // Adjust if your panel has a memory offset (common on 240x240 modules
 // mounted on a 240x320 controller) or is mounted rotated/mirrored.
