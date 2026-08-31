@@ -157,6 +157,7 @@ esp_err_t display_init(void)
     .reset_gpio_num = DISP_RST_GPIO,
     .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,
     .bits_per_pixel = 16,
+    .data_endian = LCD_RGB_DATA_ENDIAN_BIG,
 };
     ret = esp_lcd_new_panel_st7789(io_handle, &panel_config, &s_panel_handle);
     ESP_RETURN_ON_ERROR(ret, TAG, "panel st7789 init failed");
