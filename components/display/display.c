@@ -33,7 +33,7 @@ static const char *TAG = "display";
 // mounted on a 240x320 controller) or is mounted rotated/mirrored.
 #define DISP_GAP_X      0       // Horizontal offset (pixels)
 #define DISP_GAP_Y      0       // Vertical offset (pixels)
-#define DISP_SWAP_XY    false   // Swap X/Y axes (90° rotation)
+#define DISP_SWAP_XY    true   // Swap X/Y (180 rotation)
 #define DISP_MIRROR_X   false   // Mirror horizontally
 #define DISP_MIRROR_Y   false   // Mirror vertically
 
