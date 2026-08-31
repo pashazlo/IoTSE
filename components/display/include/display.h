@@ -7,8 +7,8 @@
 extern "C" {
 #endif
 
-#define DISPLAY_WIDTH   320
-#define DISPLAY_HEIGHT  240
+#define DISPLAY_WIDTH   240
+#define DISPLAY_HEIGHT  320
 
 /**
  * @brief Initialize the ST7789 display: adds it as a device on the shared
