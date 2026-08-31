@@ -3,71 +3,76 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#iclude "ui.h"
+#include "ui.h"   // <-- было #iclude, исправлено
 
 static const char *TAG = "app_main";
 
 /**
- * Application entry point.
+ * Точка входа приложения.
  *
- * Initialization order:
- * 1. Initialize the shared SPI bus (creates mutex, configures GPIO)
- * 2. Initialize the ST7789 display driver
- * 3. Fill screen with a red test pattern
- * 4. Suspend main task (application can extend with real tasks here)
+ * Порядок инициализации:
+ * 1. Инициализация общей шины SPI (создаёт мьютекс, настраивает GPIO).
+ * 2. Инициализация драйвера дисплея ST7789.
+ * 3. Создание задачи интерфейса (ui_task).
+ * 4. Приостановка главной задачи (вся дальнейшая работа выполняется в других задачах).
  */
 void app_main(void)
 {
-    ESP_LOGI(TAG, "=== IoTSE Application Starting ===");
+    ESP_LOGI(TAG, "=== Запуск приложения IoTSE ===");
 
     // ========================================================================
-    // Initialize SPI Bus (must be first, before any device drivers)
+    // 1. Инициализация шины SPI (должна быть первой, до любых драйверов устройств)
     // ========================================================================
-    ESP_LOGI(TAG, "Initializing shared SPI bus...");
+    ESP_LOGI(TAG, "Инициализация общей шины SPI...");
     esp_err_t err = spi_bus_shared_init();
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "SPI bus init failed: %s", esp_err_to_name(err));
-        return;
+        ESP_LOGE(TAG, "Ошибка инициализации SPI: %s", esp_err_to_name(err));
+        return;  // Без шины SPI дальнейшая работа невозможна
     }
-    ESP_LOGI(TAG, "✓ SPI bus initialized");
+    ESP_LOGI(TAG, "✓ Шина SPI инициализирована");
 
     // ========================================================================
-    // Initialize Display
+    // 2. Инициализация дисплея ST7789
     // ========================================================================
-    ESP_LOGI(TAG, "Initializing ST7789 display...");
+    ESP_LOGI(TAG, "Инициализация дисплея ST7789...");
     err = display_init();
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Display init failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Ошибка инициализации дисплея: %s", esp_err_to_name(err));
         return;
     }
-    ESP_LOGI(TAG, "✓ Display initialized");
+    ESP_LOGI(TAG, "✓ Дисплей инициализирован");
 
     // ========================================================================
-    // Display Self-Test: Red Screen
+    // 3. Создание задачи интерфейса (ui_task)
     // ========================================================================
-    ESP_LOGI(TAG, "Running display self-test (red screen)...");
-    err = display_fill_color(0xF800);  // 0xF800 = bright red in RGB565
-    if (err == ESP_OK) {
-        ESP_LOGI(TAG, "✓ Display self-test passed");
-    } else {
-        ESP_LOGE(TAG, "Display self-test failed: %s", esp_err_to_name(err));
+    // Задача будет отвечать за отрисовку экрана, обработку кнопок и т.д.
+    // Приоритет 5 (низкий) — чтобы не мешать критическим задачам (RF, IR и т.п.)
+    // Стек 4096 байт — обычно достаточно для canvas и LVGL-подобных операций,
+    // но если будут падения, увеличьте до 8192.
+    BaseType_t task_created = xTaskCreate(
+        ui_task,          // функция задачи
+        "ui",             // имя (для отладки)
+        4096,             // размер стека в байтах
+        NULL,             // параметры (не нужны)
+        5,                // приоритет
+        NULL              // handle (не сохраняем)
+    );
+
+    if (task_created != pdPASS) {
+        ESP_LOGE(TAG, "Не удалось создать задачу ui_task");
+        return;
     }
+    ESP_LOGI(TAG, "✓ Задача интерфейса создана");
 
     // ========================================================================
-    // Application Ready
+    // 4. Приложение готово
     // ========================================================================
-    ESP_LOGI(TAG, "=== IoTSE Application Ready ===");
-    ESP_LOGI(TAG, "Ready for additional tasks (WiFi, BLE, SD card, etc.)");
+    ESP_LOGI(TAG, "=== Приложение IoTSE готово ===");
+    ESP_LOGI(TAG, "Готово для добавления других задач (WiFi, BLE, SD-карта и др.)");
 
-    // Suspend this task. Application logic can be added here or in other tasks:
-    // - Create WiFi/BLE tasks
-    // - Create SD card read/write tasks (they will use spi_bus_lock/unlock)
-    // - Create UI update tasks (they will use display_flush)
-    //
-    // Example for later:
-    //   xTaskCreate(wifi_task, "wifi", 4096, NULL, 5, NULL);
-    //   xTaskCreate(sd_card_task, "sd_card", 4096, NULL, 4, NULL);
-    //   xTaskCreate(ui_update_task, "ui", 4096, NULL, 3, NULL);
-
-    vTaskSuspend(NULL);  // Suspend main task indefinitely
+    // Приостанавливаем главную задачу навсегда.
+    // Вся дальнейшая работа будет происходить в других задачах (ui_task и будущих).
+    // Если нужно, можно не приостанавливать, а выполнять здесь какой-то код,
+    // но в этом проекте main просто стартует подсистемы и уходит в фон.
+    vTaskSuspend(NULL);
 }
