@@ -154,13 +154,13 @@ esp_err_t display_init(void)
 
     esp_lcd_panel_dev_config_t panel_config = {
     .reset_gpio_num = DISP_RST_GPIO,
-    .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,
+    .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
     .bits_per_pixel = 16,
     .data_endian = LCD_RGB_DATA_ENDIAN_BIG,
 };
     ret = esp_lcd_new_panel_st7789(io_handle, &panel_config, &s_panel_handle);
     ESP_RETURN_ON_ERROR(ret, TAG, "panel st7789 init failed");
-    ESP_LOGI(TAG, "ST7789 controller created (RST=%d, BGR, 16-bit)", DISP_RST_GPIO);
+    ESP_LOGI(TAG, "ST7789 controller created (RST=%d, RGB, 16-bit)", DISP_RST_GPIO);
 
     // ========================================================================
     // Initialize display: reset, enable, configure orientation
