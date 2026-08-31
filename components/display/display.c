@@ -27,7 +27,7 @@ static const char *TAG = "display";
 
 // Color and orientation configuration
 // If colors look inverted on your panel, flip this to false and reflash.
-#define DISP_INVERT_COLOR   false
+#define DISP_INVERT_COLOR   true
 
 // Adjust if your panel has a memory offset (common on 240x240 modules
 // mounted on a 240x320 controller) or is mounted rotated/mirrored.
@@ -154,13 +154,12 @@ esp_err_t display_init(void)
 
     esp_lcd_panel_dev_config_t panel_config = {
     .reset_gpio_num = DISP_RST_GPIO,
-    .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
+    .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,
     .bits_per_pixel = 16,
-    .data_endian = LCD_RGB_DATA_ENDIAN_BIG,
 };
     ret = esp_lcd_new_panel_st7789(io_handle, &panel_config, &s_panel_handle);
     ESP_RETURN_ON_ERROR(ret, TAG, "panel st7789 init failed");
-    ESP_LOGI(TAG, "ST7789 controller created (RST=%d, RGB, 16-bit)", DISP_RST_GPIO);
+    ESP_LOGI(TAG, "ST7789 controller created (RST=%d, BGR, 16-bit)", DISP_RST_GPIO);
 
     // ========================================================================
     // Initialize display: reset, enable, configure orientation
