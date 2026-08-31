@@ -34,20 +34,10 @@ void ui_task(void *arg) {
         vTaskDelete(NULL);
         return;
     }
-    // Заливаем экран красным
-gfx_canvas_fill(&canvas, GFX_RED);
+    gfx_canvas_fill(&canvas, GFX_BLACK);
+gfx_canvas_fill_rect(&canvas, 0, 100, 320, 20, GFX_WHITE);  // y=100, высота 20px
 gfx_canvas_flush(&canvas);
-vTaskDelay(pdMS_TO_TICKS(1000));
-
-// Рисуем белую рамку по периметру
-gfx_canvas_draw_rect(&canvas, 0, 0, 319, 239, GFX_WHITE);
-gfx_canvas_flush(&canvas);
-vTaskDelay(pdMS_TO_TICKS(1000));
-
-// Диагональ
-gfx_canvas_draw_line(&canvas, 0, 0, 319, 239, GFX_GREEN);
-gfx_canvas_flush(&canvas);
-vTaskDelay(pdMS_TO_TICKS(1000));
+vTaskDelay(pdMS_TO_TICKS(2000));
 
     // 2. Рисуем статичный экран один раз
     draw_screen_1(&canvas);
