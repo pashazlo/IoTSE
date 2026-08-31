@@ -12,8 +12,19 @@ extern "C" {
 // Lopaka/Adafruit code uses when it hands you separate R,G,B.
 #define GFX_RGB565(r,g,b)  ((((r)&0xF8)<<8) | (((g)&0xFC)<<3) | ((b)>>3))
 
+#define GFX_RED     0xF800
+#define GFX_GREEN   0x07E0
+#define GFX_PINK    0xD809
 #define GFX_BLACK   0x0000
 #define GFX_WHITE   0xFFFF
+#define GFX_BLUE      0x001F
+#define GFX_YELLOW    0xFFE0
+#define GFX_CYAN      0x07FF
+#define GFX_MAGENTA   0xF81F
+#define GFX_ORANGE    0xFD20
+#define GFX_DARKGRAY  0x7BEF
+#define GFX_LIGHTGRAY 0xC618
+#define GFX_DARKGREEN 0x03E0
 
 /**
  * @brief GFXfont-compatible font format (same layout Adafruit GFX and
