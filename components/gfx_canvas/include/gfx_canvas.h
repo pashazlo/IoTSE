@@ -12,11 +12,11 @@ extern "C" {
 // Lopaka/Adafruit code uses when it hands you separate R,G,B.
 #define GFX_RGB565(r,g,b)  ((((r)&0xF8)<<8) | (((g)&0xFC)<<3) | ((b)>>3))
 
-#define GFX_RED     0xF800
-#define GFX_GREEN   0x07E0
-#define GFX_PINK    0xD809
-#define GFX_BLACK   0x0000
-#define GFX_WHITE   0xFFFF
+#define GFX_RED       0xF800
+#define GFX_GREEN     0x07E0
+#define GFX_PINK      0xD809
+#define GFX_BLACK     0x0000
+#define GFX_WHITE     0xFFFF
 #define GFX_BLUE      0x001F
 #define GFX_YELLOW    0xFFE0
 #define GFX_CYAN      0x07FF
@@ -67,7 +67,7 @@ typedef struct {
 
 /**
  * @brief Allocate a canvas of the given size. Uses DMA-capable memory
- *        so the buffer can be handed straight to display_flush().
+ *        so the buffer can be handed straight to display_draw_bitmap().
  *        A full 240x320 canvas costs 240*320*2 = 150KB — fine on
  *        PSRAM-equipped boards, tight on internal SRAM alone. For
  *        SRAM-only boards, size canvases to just the region you're
@@ -105,7 +105,7 @@ void gfx_canvas_printf(gfx_canvas_t *c, const char *fmt, ...);
 
 /**
  * @brief Push exactly the dirty rectangle to the physical panel via
- *        display_flush(), then clears the dirty rect. If nothing was
+ *        display_draw_bitmap(), then clears the dirty rect. If nothing was
  *        drawn since the last flush, this is a no-op (no SPI traffic).
  */
 esp_err_t gfx_canvas_flush(gfx_canvas_t *c);
