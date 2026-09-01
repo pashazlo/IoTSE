@@ -117,7 +117,7 @@ esp_lcd_panel_dev_config_t panel_config = {
   // --- Ориентация и цвета ---
 esp_lcd_panel_swap_xy(s_panel_handle, true);
 esp_lcd_panel_mirror(s_panel_handle, true, false);
-esp_lcd_panel_invert_color(s_panel_handle, false);
+esp_lcd_panel_invert_color(s_panel_handle, true);
 
 // Критично для 170×320
 esp_lcd_panel_set_gap(s_panel_handle, 0, 35);     // ← добавил
