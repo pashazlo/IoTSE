@@ -87,7 +87,7 @@ esp_err_t display_init(void)
    // 3. Создаем драйвер панели ST7789
 esp_lcd_panel_dev_config_t panel_config = {
     .reset_gpio_num = DISP_RST_GPIO,
-    .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,   // ← было RGB
+    .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,   // ← было RGB
     .bits_per_pixel = 16,
 };
     
