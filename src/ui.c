@@ -12,22 +12,24 @@ static const uint8_t image_982f4ed7d64cf132d2647654eb5dff37_bits[] = {0x00,0x00,
 // Функция отрисовки экрана (ИСПРАВЛЕННАЯ)
 // ============================================================================
 
-static void draw_screen_1(gfx_canvas_t *canvas) {
-    // 1. Заливка фона РОЗОВЫМ
-    gfx_canvas_fill(canvas, GFX_PINK);  // 0xD809
-    
-    // 2. Верхняя линия (статус бар) — отступ 13 пикселей
-    gfx_canvas_draw_line(canvas, 0, 13, 320, 13, GFX_WHITE);
-    
-    // 3. Нижняя линия (подсказки) — отступ 218 пикселей
-    gfx_canvas_draw_line(canvas, 0, 150, 320, 150, GFX_WHITE);
-    
-    // 4. Череп DEDsec — рисуем с правильными координатами
-    //    Битмап 320x240, canvas 320x240
-    //    Начинаем с (0, 14) чтобы не перекрывать верхнюю линию
-    gfx_canvas_draw_bitmap_mono(canvas, 0, 14,
+static void draw_screen_1(gfx_canvas_t *canvas)
+{
+    // 1. Фон
+    gfx_canvas_fill(canvas, GFX_PINK);   // потом поправим цвет, если нужно
+
+    // 2. Верхняя линия (статус-бар) — небольшой отступ сверху
+    gfx_canvas_draw_line(canvas, 0, 12, DISPLAY_WIDTH - 1, 12, GFX_WHITE);
+
+    // 3. Нижняя линия (зона подсказок) — почти в самом низу
+    gfx_canvas_draw_line(canvas, 0, 158, DISPLAY_WIDTH - 1, 158, GFX_WHITE);
+
+    // 4. Череп / логотип
+    //    Рисуем между линиями: начинаем с y=14, высота ~140 пикселей
+    //    (170 - 14 - 12 ≈ 144, оставляем запас)
+    gfx_canvas_draw_bitmap_mono(canvas,
+                                0, 14,                                    // x, y
                                 image_982f4ed7d64cf132d2647654eb5dff37_bits,
-                                320, 130,  // 240 - 14 = 226 (высота видимой части)
+                                320, 140,                                 // ширина, высота куска
                                 GFX_WHITE);
 }
 
