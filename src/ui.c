@@ -20,7 +20,7 @@ static void draw_redteam_logo(gfx_canvas_t *canvas, int16_t cx, int16_t cy)
     gfx_canvas_fill_circle(canvas, cx, cy, 11, 0xFFFF);
 
     // Блик
-    gfx_canvas_fill_circle(canvas, cx - 5, cy - 5, 3, 0xD809);
+    gfx_canvas_fill_circle(canvas, cx - 5, cy - 5, 3, 0xF81F);
 
     // Прицел (4 линии)
     gfx_canvas_draw_line(canvas, cx - 68, cy,     cx - 46, cy,     0xFFFF);
@@ -37,7 +37,7 @@ static void draw_redteam_logo(gfx_canvas_t *canvas, int16_t cx, int16_t cy)
 // Отрисовка главного экрана
    static void draw_screen_1(gfx_canvas_t *canvas)
 {
-    gfx_canvas_fill(canvas, 0xD809);
+    gfx_canvas_fill(canvas, 0xF81F);
 // верхняя и нижняя линии
     gfx_canvas_draw_line(canvas, 0, 12, 319, 12, 0xFFFF);
     gfx_canvas_draw_line(canvas, 0, 158, 319, 158, 0xFFFF);
