@@ -84,12 +84,12 @@ esp_err_t display_init(void)
     ESP_RETURN_ON_ERROR(ret, TAG, "Failed to create panel IO");
     ESP_LOGI(TAG, "LCD panel IO created (DC=%d, CS=%d)", DISP_DC_GPIO, DISP_CS_GPIO);
 
-    // 3. Создаем драйвер панели ST7789
-    esp_lcd_panel_dev_config_t panel_config = {
-        .reset_gpio_num = DISP_RST_GPIO,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
-        .bits_per_pixel = 16,
-    };
+   // 3. Создаем драйвер панели ST7789
+esp_lcd_panel_dev_config_t panel_config = {
+    .reset_gpio_num = DISP_RST_GPIO,
+    .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,   // ← было RGB
+    .bits_per_pixel = 16,
+};
     
     ret = esp_lcd_new_panel_st7789(s_io_handle, &panel_config, &s_panel_handle);
     ESP_RETURN_ON_ERROR(ret, TAG, "Failed to create ST7789 panel");
@@ -114,16 +114,15 @@ esp_err_t display_init(void)
     
     // --- ИСПРАВЛЕНИЯ ОРИЕНТАЦИИ, ЗУМА И ЦВЕТОВ ---
     // Включаем swap_xy и зеркалирование X, чтобы дедсек встал ровно в правый нижний угол
-    esp_lcd_panel_swap_xy(s_panel_handle, true);
-    esp_lcd_panel_mirror(s_panel_handle, true, false);
-    
-    // Включаем инверсию цвета: фиксит розовый/оранжевый и белый/черный на ST7789
-    esp_lcd_panel_invert_color(s_panel_handle, true);
-    
-    // По желанию: если после заливки по краям экрана останется сдвиг, расскоментируй:
-    // esp_lcd_panel_set_gap(s_panel_handle, 0, 0);
+  // --- Ориентация и цвета ---
+esp_lcd_panel_swap_xy(s_panel_handle, true);
+esp_lcd_panel_mirror(s_panel_handle, true, false);
+esp_lcd_panel_invert_color(s_panel_handle, true);
 
-    esp_lcd_panel_disp_on_off(s_panel_handle, true);
+// Критично для 170×320
+esp_lcd_panel_set_gap(s_panel_handle, 0, 35);     // ← добавил
+
+esp_lcd_panel_disp_on_off(s_panel_handle, true);
     
     spi_bus_unlock();
     vTaskDelay(pdMS_TO_TICKS(50));
