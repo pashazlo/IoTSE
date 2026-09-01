@@ -1,6 +1,6 @@
 #pragma once
-#define DISPLAY_WIDTH  320
-#define DISPLAY_HEIGHT 240
+#include "display.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
