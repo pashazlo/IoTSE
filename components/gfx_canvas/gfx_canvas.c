@@ -155,16 +155,37 @@ void gfx_canvas_fill_circle(gfx_canvas_t *c, int16_t x0, int16_t y0, int16_t r, 
     }
 }
 
+// ============================================================================
+// ИСПРАВЛЕННАЯ ФУНКЦИЯ draw_bitmap_mono
+// ============================================================================
+
 void gfx_canvas_draw_bitmap_mono(gfx_canvas_t *c, int16_t x, int16_t y,
                                   const uint8_t *bitmap, int16_t w, int16_t h, uint16_t color)
 {
+    // Обрезаем по границам canvas
+    int16_t start_x = (x < 0) ? -x : 0;
+    int16_t start_y = (y < 0) ? -y : 0;
+    int16_t end_x = (x + w > c->width) ? c->width - x : w;
+    int16_t end_y = (y + h > c->height) ? c->height - y : h;
+    
+    if (start_x >= end_x || start_y >= end_y) return;
+    
     int16_t bytes_per_row = (w + 7) / 8;
-    for (int16_t yy = 0; yy < h; yy++) {
-        for (int16_t xx = 0; xx < w; xx++) {
+    
+    // Рисуем только видимую часть
+    for (int16_t yy = start_y; yy < end_y; yy++) {
+        uint16_t *row = &c->buf[(int32_t)(y + yy) * c->width + x];
+        for (int16_t xx = start_x; xx < end_x; xx++) {
             uint8_t byte = bitmap[yy * bytes_per_row + (xx / 8)];
             if (byte & (0x80 >> (xx & 7))) {
-                gfx_canvas_draw_pixel(c, x + xx, y + yy, color);
+                row[xx] = color;
             }
+        }
+    }
+    
+    // Отмечаем dirty rect один раз (а не на каждый пиксель!)
+    mark_dirty(c, x + start_x, y + start_y, x + end_x, y + end_y);
+}
         }
     }
 }
