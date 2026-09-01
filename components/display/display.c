@@ -1,9 +1,11 @@
 #include "include/display.h"
 #include "esp_log.h"
 #include "esp_check.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
+#include "driver/spi_master.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_vendor.h"
 #include "esp_lcd_panel_ops.h"
@@ -18,11 +20,11 @@ static const char *TAG = "display";
 #define DISP_DC_GPIO     15        // Data/Command
 #define DISP_CS_GPIO     7         // Chip Select
 #define DISP_BL_GPIO     6         // Backlight (PWM или просто ON)
-#define DISP_SCLK_GPIO   18        // SCK (SPI2)
-#define DISP_MOSI_GPIO   17        // MOSI (SPI2)
-#define DISP_MISO_GPIO   -1        // MISO (не используется для дисплея)
+#define DISP_SCLK_GPIO   18        // SCK (Общая шина SPI2)
+#define DISP_MOSI_GPIO   17        // MOSI (Общая шина SPI2)
+#define DISP_MISO_GPIO   -1        // MISO не нужен для дисплея
 
-#define SPI_FREQ_HZ      (20 * 1000 * 1000)  // 20 MHz (безопасно для ST7789)
+#define SPI_FREQ_HZ      (20 * 1000 * 1000)  // 20 MHz
 
 // ============================================================================
 // Состояние
@@ -64,7 +66,7 @@ esp_err_t display_init(void)
     esp_err_t ret = ESP_OK;
 
     // ====================================================================
-    // 1. Инициализация SPI (режим 2-wire, без MISO для дисплея)
+    // 1. Умная инициализация SPI (Безопасно для SD-карты)
     // ====================================================================
     
     spi_bus_config_t buscfg = {
@@ -73,13 +75,20 @@ esp_err_t display_init(void)
         .miso_io_num = DISP_MISO_GPIO,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
-        // Максимальный размер трансфера для полного фрейма 320x240 RGB565
         .max_transfer_sz = DISPLAY_WIDTH * DISPLAY_HEIGHT * sizeof(uint16_t),
     };
     
+    // Пытаемся инициализировать шину. 
+    // Если SD-карта уже подняла SPI2_HOST, функция вернет ESP_ERR_INVALID_STATE, 
+    // мы мягко игнорируем это и используем уже готовую шину!
     ret = spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO);
-    ESP_RETURN_ON_ERROR(ret, TAG, "Failed to initialize SPI bus");
-    ESP_LOGI(TAG, "SPI bus initialized (SCK=%d, MOSI=%d)", DISP_SCLK_GPIO, DISP_MOSI_GPIO);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "SPI2 bus initialized by Display (SCK=%d, MOSI=%d)", DISP_SCLK_GPIO, DISP_MOSI_GPIO);
+    } else if (ret == ESP_ERR_INVALID_STATE) {
+        ESP_LOGI(TAG, "SPI2 bus already initialized by SD card. Reusing bus.");
+    } else {
+        ESP_RETURN_ON_ERROR(ret, TAG, "Failed to initialize SPI bus");
+    }
 
     // ====================================================================
     // 2. Конфигурация LCD panel IO (SPI interface)
@@ -93,7 +102,7 @@ esp_err_t display_init(void)
         .trans_queue_depth = 10,
         .lcd_cmd_bits = 8,
         .lcd_param_bits = 8,
-        .on_color_trans_done = NULL,    // Без callback, синхронный режим
+        .on_color_trans_done = NULL,
         .user_ctx = NULL,
     };
     
@@ -107,8 +116,8 @@ esp_err_t display_init(void)
     
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = DISP_RST_GPIO,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,  // RGB порядок
-        .bits_per_pixel = 16,                        // RGB565
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
+        .bits_per_pixel = 16,
     };
     
     ret = esp_lcd_new_panel_st7789(s_io_handle, &panel_config, &s_panel_handle);
@@ -119,30 +128,23 @@ esp_err_t display_init(void)
     // 4. Инициализация ST7789 по даташиту
     // ====================================================================
     
-    // Hardware reset
     ret = esp_lcd_panel_reset(s_panel_handle);
     ESP_RETURN_ON_ERROR(ret, TAG, "Failed to reset panel");
     vTaskDelay(pdMS_TO_TICKS(10));
     
-    // Wake up from sleep
     ret = esp_lcd_panel_init(s_panel_handle);
     ESP_RETURN_ON_ERROR(ret, TAG, "Failed to initialize panel");
     vTaskDelay(pdMS_TO_TICKS(100));
     
-    // Установка ориентации: альбомная (320x240)
-    // swap_xy=true => 240x320 становится 320x240
-    // mirror_x=false, mirror_y=true => правильная ориентация
     ret = esp_lcd_panel_swap_xy(s_panel_handle, true);
     ESP_RETURN_ON_ERROR(ret, TAG, "Failed to swap XY");
     
     ret = esp_lcd_panel_mirror(s_panel_handle, false, true);
     ESP_RETURN_ON_ERROR(ret, TAG, "Failed to mirror");
     
-    // Инверсия цветов (если нужно)
     ret = esp_lcd_panel_invert_color(s_panel_handle, false);
     ESP_RETURN_ON_ERROR(ret, TAG, "Failed to set color inversion");
     
-    // Включаем дисплей
     ret = esp_lcd_panel_disp_on_off(s_panel_handle, true);
     ESP_RETURN_ON_ERROR(ret, TAG, "Failed to turn on display");
     vTaskDelay(pdMS_TO_TICKS(50));
@@ -169,8 +171,6 @@ esp_err_t display_draw_bitmap(int x0, int y0, int x1, int y1, const uint16_t *co
         return ESP_ERR_INVALID_STATE;
     }
     
-    // x0, y0 — верхний левый угол
-    // x1, y1 — нижний правый угол (exclusive)
     return esp_lcd_panel_draw_bitmap(s_panel_handle, x0, y0, x1, y1, color_data);
 }
 
@@ -188,7 +188,6 @@ esp_err_t display_fill_color(uint16_t color)
         return ESP_ERR_NO_MEM;
     }
     
-    // Быстрая заливка: используем 32-bit write
     uint32_t color32 = (uint32_t)color | ((uint32_t)color << 16);
     for (size_t i = 0; i < pixel_count / 2; i++) {
         ((uint32_t *)framebuffer)[i] = color32;
@@ -204,7 +203,7 @@ esp_err_t display_fill_color(uint16_t color)
 }
 
 // ============================================================================
-// Получить handle панели (для продвинутого использования)
+// Получить handle панели
 // ============================================================================
 
 esp_lcd_panel_handle_t display_get_panel_handle(void)
