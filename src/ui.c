@@ -13,23 +13,16 @@ static const uint8_t image_982f4ed7d64cf132d2647654eb5dff37_bits[] = {0x00,0x00,
 // ============================================================================
    static void draw_screen_1(gfx_canvas_t *canvas)
 {
-    // 1. Фон
     gfx_canvas_fill(canvas, 0xD809);
 
-    // 2. Верхняя линия (статус-бар)
-    gfx_canvas_draw_line(canvas, 0, 12, DISPLAY_WIDTH - 1, 12, 0xFFFF);
+    // рамка по самому краю экрана
+    gfx_canvas_draw_rect(canvas, 0, 0, 320, 170, 0xFFFF);
 
-    // 3. Нижняя линия (зона подсказок)
-    gfx_canvas_draw_line(canvas, 0, 158, DISPLAY_WIDTH - 1, 158, 0xFFFF);
+    // маленький квадрат 50×50 в левом верхнем углу
+    gfx_canvas_fill_rect(canvas, 10, 20, 50, 50, 0xFFFF);
 
-    // 4. Логотип / череп — сдвинут вправо
-    //    Оставляем слева ~90-100 пикселей под будущее меню
-    gfx_canvas_draw_bitmap_mono(canvas,
-                                18,          // x — сдвиг вправо
-                                13,           // y — чуть выше, почти как твой -5, но без ухода в минус
-                                image_982f4ed7d64cf132d2647654eb5dff37_bits,
-                                302, 145,    // ширина и высота
-                                0xFFFF);
+    // линия посередине
+    gfx_canvas_draw_line(canvas, 0, 85, 319, 85, 0xFFFF);
 }
 
 // ============================================================================
