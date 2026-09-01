@@ -91,7 +91,19 @@ esp_err_t display_set_rotation(uint8_t rotation)
             break;
     }
     
-    // Включаем BGR (если нужно — поменяй на 0x00 для RGB)
+    // ============================================================
+    // ВЫБЕРИ ПРАВИЛЬНЫЙ ВАРИАНТ (раскомментируй нужный)
+    // ============================================================
+    
+    // Вариант A: BGR (если красный = синий, а синий = красный)
+    // madctl |= 0x08;  // BGR
+    
+    // Вариант B: RGB (если красный = красный, синий = синий)
+    // madctl &= ~0x08;  // RGB (убираем бит)
+    
+    // ============================================================
+    // ПО УМОЛЧАНИЮ: BGR (для большинства ST7789)
+    // ============================================================
     madctl |= 0x08;  // BGR
     
     ESP_LOGI(TAG, "MADCTL=0x%02X", madctl);
@@ -99,7 +111,7 @@ esp_err_t display_set_rotation(uint8_t rotation)
 }
 
 // ============================================================================
-// Инициализация
+// Инициализация (БЕЗ ТЕСТОВ!)
 // ============================================================================
 
 esp_err_t display_init(void)
@@ -144,103 +156,35 @@ esp_err_t display_init(void)
     ESP_RETURN_ON_ERROR(ret, TAG, "panel st7789 init failed");
 
     // ========================================================================
-    // Инициализация по даташиту
+    // Инициализация по даташиту (секция 8.16)
     // ========================================================================
 
-    // Reset
+    // 1. Hardware Reset
     ESP_RETURN_ON_ERROR(esp_lcd_panel_reset(s_panel_handle), TAG, "reset failed");
     vTaskDelay(pdMS_TO_TICKS(10));
 
-    // Sleep Out
+    // 2. Sleep Out (выход из сна)
     ESP_RETURN_ON_ERROR(esp_lcd_panel_init(s_panel_handle), TAG, "init failed");
-    vTaskDelay(pdMS_TO_TICKS(120));
+    vTaskDelay(pdMS_TO_TICKS(120));  // 120ms — обязательно!
 
-    // COLMOD — 16-bit RGB565
+    // 3. COLMOD — 16-bit RGB565
     uint8_t colmod = 0x55;
     esp_lcd_panel_io_tx_param(s_io_handle, 0x3A, &colmod, 1);
-    ESP_LOGI(TAG, "COLMOD=0x%02X", colmod);
+    ESP_LOGI(TAG, "COLMOD=0x%02X (16-bit)", colmod);
 
-    // ========================================================================
-    // ТЕСТОВЫЙ РЕЖИМ — посмотри какая комбинация работает
-    // ========================================================================
+    // 4. Устанавливаем альбомную ориентацию (90°)
+    display_set_rotation(1);  // 1 = 90°
 
-    ESP_LOGI(TAG, "=== TEST MODE START ===");
-    ESP_LOGI(TAG, "Watch the screen and note which test looks correct");
-    
-    // Тест 1: Invert ON, BGR ON
-    ESP_LOGI(TAG, "Test 1: Invert=ON, BGR=ON");
-    esp_lcd_panel_invert_color(s_panel_handle, true);
-    display_set_rotation(1);  // BGR включен (0x68)
-    display_fill_color(0xFFFF);  // Белый
-    vTaskDelay(pdMS_TO_TICKS(1500));
-    display_fill_color(0xF800);  // Красный
-    vTaskDelay(pdMS_TO_TICKS(1500));
-    display_fill_color(0x07E0);  // Зеленый
-    vTaskDelay(pdMS_TO_TICKS(1500));
-    display_fill_color(0x001F);  // Синий
-    vTaskDelay(pdMS_TO_TICKS(1500));
-    
-    // Тест 2: Invert ON, BGR OFF
-    ESP_LOGI(TAG, "Test 2: Invert=ON, BGR=OFF");
-    uint8_t madctl_no_bgr = 0x60;
-    esp_lcd_panel_io_tx_param(s_io_handle, 0x36, &madctl_no_bgr, 1);
+    // 5. Включаем дисплей
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_on_off(s_panel_handle, true), TAG, "disp_on failed");
+
+    // 6. Backlight
+    ESP_RETURN_ON_ERROR(backlight_init(), TAG, "backlight init failed");
+
+    // 7. Заливаем белым (фон для UI)
     display_fill_color(0xFFFF);
-    vTaskDelay(pdMS_TO_TICKS(1500));
-    display_fill_color(0xF800);
-    vTaskDelay(pdMS_TO_TICKS(1500));
-    display_fill_color(0x07E0);
-    vTaskDelay(pdMS_TO_TICKS(1500));
-    display_fill_color(0x001F);
-    vTaskDelay(pdMS_TO_TICKS(1500));
-    
-    // Тест 3: Invert OFF, BGR ON
-    ESP_LOGI(TAG, "Test 3: Invert=OFF, BGR=ON");
-    esp_lcd_panel_invert_color(s_panel_handle, false);
-    display_set_rotation(1);  // BGR включен
-    display_fill_color(0xFFFF);
-    vTaskDelay(pdMS_TO_TICKS(1500));
-    display_fill_color(0xF800);
-    vTaskDelay(pdMS_TO_TICKS(1500));
-    display_fill_color(0x07E0);
-    vTaskDelay(pdMS_TO_TICKS(1500));
-    display_fill_color(0x001F);
-    vTaskDelay(pdMS_TO_TICKS(1500));
-    
-    // Тест 4: Invert OFF, BGR OFF
-    ESP_LOGI(TAG, "Test 4: Invert=OFF, BGR=OFF");
-    madctl_no_bgr = 0x60;
-    esp_lcd_panel_io_tx_param(s_io_handle, 0x36, &madctl_no_bgr, 1);
-    display_fill_color(0xFFFF);
-    vTaskDelay(pdMS_TO_TICKS(1500));
-    display_fill_color(0xF800);
-    vTaskDelay(pdMS_TO_TICKS(1500));
-    display_fill_color(0x07E0);
-    vTaskDelay(pdMS_TO_TICKS(1500));
-    display_fill_color(0x001F);
-    vTaskDelay(pdMS_TO_TICKS(1500));
-    
-    ESP_LOGI(TAG, "=== TEST COMPLETE ===");
-    ESP_LOGI(TAG, "Which test had correct colors?");
-    ESP_LOGI(TAG, "  - White should be WHITE (not black)");
-    ESP_LOGI(TAG, "  - Red should be RED");
-    ESP_LOGI(TAG, "  - Green should be GREEN");
-    ESP_LOGI(TAG, "  - Blue should be BLUE");
-    ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "Based on the test, change the settings below:");
-    ESP_LOGI(TAG, "  - Invert ON/OFF (line ~185)");
-    ESP_LOGI(TAG, "  - BGR ON/OFF (line ~90)");
-    
-    // ========================================================================
-    // ВРЕМЕННО: оставляем Test 1 (Invert ON, BGR ON) как рабочий вариант
-    // Если нужен другой — поменяй ниже
-    // ========================================================================
-    
-    ESP_LOGI(TAG, "Using Test 1 as default (Invert ON, BGR ON)");
-    esp_lcd_panel_invert_color(s_panel_handle, true);
-    display_set_rotation(1);
-    display_fill_color(0xFFFF);
-    
-    ESP_LOGI(TAG, "Display ready!");
+
+    ESP_LOGI(TAG, "Display ready! (%dx%d)", DISPLAY_WIDTH, DISPLAY_HEIGHT);
     return ESP_OK;
 }
 
@@ -273,7 +217,7 @@ esp_err_t display_flush(int x1, int y1, int x2, int y2, const uint16_t *color_da
 }
 
 // ============================================================================
-// Заливка
+// Заливка цветом
 // ============================================================================
 
 esp_err_t display_fill_color(uint16_t color)
@@ -286,6 +230,7 @@ esp_err_t display_fill_color(uint16_t color)
         return ESP_ERR_NO_MEM;
     }
 
+    // Быстрая заливка 32-битными блоками
     uint32_t color32 = (uint32_t)color | ((uint32_t)color << 16);
     for (size_t i = 0; i < pixel_count / 2; i++) {
         ((uint32_t*)framebuffer)[i] = color32;
@@ -297,4 +242,26 @@ esp_err_t display_fill_color(uint16_t color)
     esp_err_t err = display_flush(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, framebuffer);
     free(framebuffer);
     return err;
+}
+
+// ============================================================================
+// ТЕСТОВАЯ ФУНКЦИЯ — вызывай из main() для проверки цветов
+// ============================================================================
+
+void display_test_colors(void)
+{
+    ESP_LOGI(TAG, "=== COLOR TEST ===");
+    ESP_LOGI(TAG, "White -> Red -> Green -> Blue");
+    
+    display_fill_color(0xFFFF);  // Белый
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    display_fill_color(0xF800);  // Красный
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    display_fill_color(0x07E0);  // Зеленый
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    display_fill_color(0x001F);  // Синий
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    display_fill_color(0xFFFF);  // Белый (фон)
+    
+    ESP_LOGI(TAG, "=== TEST DONE ===");
 }
