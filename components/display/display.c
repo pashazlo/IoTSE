@@ -1,49 +1,35 @@
 #include "display.h"
-#include "spi_bus.h"
-
-#include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
-#include "driver/gpio.h"
-#include "esp_heap_caps.h"
-#include "esp_check.h"
 #include "esp_log.h"
+#include "esp_check.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/gpio.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_vendor.h"
 #include "esp_lcd_panel_ops.h"
-#include "esp_lcd_panel_st7789.h"
-#include "esp_lcd_types.h"
 
 static const char *TAG = "display";
 
 // ============================================================================
-// Пины
+// Пины (ST7789)
 // ============================================================================
 
-#define DISP_RST_GPIO   16
-#define DISP_DC_GPIO    15
-#define DISP_CS_GPIO    7
-#define DISP_BL_GPIO    6
+#define DISP_RST_GPIO    16        // Reset
+#define DISP_DC_GPIO     15        // Data/Command
+#define DISP_CS_GPIO     7         // Chip Select
+#define DISP_BL_GPIO     6         // Backlight (PWM или просто ON)
+#define DISP_SCLK_GPIO   18        // SCK (SPI2)
+#define DISP_MOSI_GPIO   17        // MOSI (SPI2)
+#define DISP_MISO_GPIO   -1        // MISO (не используется для дисплея)
+
+#define SPI_FREQ_HZ      (20 * 1000 * 1000)  // 20 MHz (безопасно для ST7789)
 
 // ============================================================================
-// Состояние драйвера
+// Состояние
 // ============================================================================
 
 static esp_lcd_panel_handle_t s_panel_handle = NULL;
 static esp_lcd_panel_io_handle_t s_io_handle = NULL;
-static SemaphoreHandle_t s_flush_done_sem = NULL;
-
-// ============================================================================
-// ISR Callback
-// ============================================================================
-
-static bool IRAM_ATTR notify_flush_done(esp_lcd_panel_io_handle_t io,
-                                        esp_lcd_panel_io_event_data_t *edata,
-                                        void *user_ctx)
-{
-    BaseType_t hp_task_woken = pdFALSE;
-    xSemaphoreGiveFromISR(s_flush_done_sem, &hp_task_woken);
-    return hp_task_woken == pdTRUE;
-}
 
 // ============================================================================
 // Backlight
@@ -54,179 +40,138 @@ static esp_err_t backlight_init(void)
     gpio_config_t bl_gpio_config = {
         .mode = GPIO_MODE_OUTPUT,
         .pin_bit_mask = 1ULL << DISP_BL_GPIO,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
     };
+    
     esp_err_t err = gpio_config(&bl_gpio_config);
-    if (err == ESP_OK) {
-        gpio_set_level(DISP_BL_GPIO, 1);
-        ESP_LOGI(TAG, "Backlight ON");
+    if (err != ESP_OK) {
+        return err;
     }
-    return err;
+    
+    gpio_set_level(DISP_BL_GPIO, 1);
+    ESP_LOGI(TAG, "Backlight ON");
+    return ESP_OK;
 }
 
 // ============================================================================
-// Управление ориентацией через MADCTL
-// ============================================================================
-
-esp_err_t display_set_rotation(uint8_t rotation)
-{
-    if (s_io_handle == NULL) {
-        ESP_LOGE(TAG, "display_set_rotation: not initialized");
-        return ESP_ERR_INVALID_STATE;
-    }
-    
-    uint8_t madctl = 0x00;
-    
-    switch (rotation % 4) {
-        case 0:  // 0°
-            madctl = 0x00;
-            break;
-        case 1:  // 90° — альбом
-            madctl = 0x60;
-            break;
-        case 2:  // 180°
-            madctl = 0xC0;
-            break;
-        case 3:  // 270°
-            madctl = 0xA0;
-            break;
-    }
-    
-    // ============================================================
-    // ПРАВИЛЬНАЯ КОМБИНАЦИЯ ДЛЯ ТВОЕГО UI (розовый фон, белый череп)
-    // ============================================================
-    
-    // 1. Включаем BGR (исправляет розовый в оранжевый)
-    madctl |= 0x08;  // BGR
-    
-    // 2. Если белый стал черным — раскомментируй инверсию в display_init()
-    //    Смотри строку ~186
-    
-    ESP_LOGI(TAG, "MADCTL=0x%02X (BGR=ON)", madctl);
-    return esp_lcd_panel_io_tx_param(s_io_handle, 0x36, &madctl, 1);
-}
-
-// ============================================================================
-// Инициализация
+// Инициализация дисплея
 // ============================================================================
 
 esp_err_t display_init(void)
 {
     esp_err_t ret = ESP_OK;
 
-    // Семафор
-    s_flush_done_sem = xSemaphoreCreateBinary();
-    ESP_RETURN_ON_FALSE(s_flush_done_sem != NULL, ESP_ERR_NO_MEM, TAG, "sem alloc failed");
+    // ====================================================================
+    // 1. Инициализация SPI (режим 2-wire, без MISO для дисплея)
+    // ====================================================================
+    
+    spi_bus_config_t buscfg = {
+        .sclk_io_num = DISP_SCLK_GPIO,
+        .mosi_io_num = DISP_MOSI_GPIO,
+        .miso_io_num = DISP_MISO_GPIO,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+        // Максимальный размер трансфера для полного фрейма 320x240 RGB565
+        .max_transfer_sz = DISPLAY_WIDTH * DISPLAY_HEIGHT * sizeof(uint16_t),
+    };
+    
+    ret = spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO);
+    ESP_RETURN_ON_ERROR(ret, TAG, "Failed to initialize SPI bus");
+    ESP_LOGI(TAG, "SPI bus initialized (SCK=%d, MOSI=%d)", DISP_SCLK_GPIO, DISP_MOSI_GPIO);
 
-    // ========================================================================
-    // SPI интерфейс
-    // ========================================================================
-
-    esp_lcd_panel_io_handle_t io_handle = NULL;
+    // ====================================================================
+    // 2. Конфигурация LCD panel IO (SPI interface)
+    // ====================================================================
+    
     esp_lcd_panel_io_spi_config_t io_config = {
         .cs_gpio_num = DISP_CS_GPIO,
         .dc_gpio_num = DISP_DC_GPIO,
-        .spi_mode = 0,
-        .pclk_hz = 40 * 1000 * 1000,
+        .spi_mode = 0,                  // Mode 0: CPOL=0, CPHA=0
+        .pclk_hz = SPI_FREQ_HZ,
         .trans_queue_depth = 10,
         .lcd_cmd_bits = 8,
         .lcd_param_bits = 8,
-        .on_color_trans_done = notify_flush_done,
+        .on_color_trans_done = NULL,    // Без callback, синхронный режим
         .user_ctx = NULL,
     };
-    ret = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)SHARED_SPI_HOST, &io_config, &io_handle);
-    ESP_RETURN_ON_ERROR(ret, TAG, "panel io init failed");
-    s_io_handle = io_handle;
-    ESP_LOGI(TAG, "SPI interface ready");
+    
+    ret = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)SPI2_HOST, &io_config, &s_io_handle);
+    ESP_RETURN_ON_ERROR(ret, TAG, "Failed to create panel IO");
+    ESP_LOGI(TAG, "LCD panel IO created (DC=%d, CS=%d)", DISP_DC_GPIO, DISP_CS_GPIO);
 
-    // ========================================================================
-    // ST7789 контроллер
-    // ========================================================================
-
+    // ====================================================================
+    // 3. Конфигурация ST7789 panel driver
+    // ====================================================================
+    
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = DISP_RST_GPIO,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
-        .bits_per_pixel = 16,
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,  // RGB порядок
+        .bits_per_pixel = 16,                        // RGB565
     };
-    ret = esp_lcd_new_panel_st7789(io_handle, &panel_config, &s_panel_handle);
-    ESP_RETURN_ON_ERROR(ret, TAG, "panel st7789 init failed");
+    
+    ret = esp_lcd_new_panel_st7789(s_io_handle, &panel_config, &s_panel_handle);
+    ESP_RETURN_ON_ERROR(ret, TAG, "Failed to create ST7789 panel");
+    ESP_LOGI(TAG, "ST7789 panel driver created");
 
-    // ========================================================================
-    // Инициализация по даташиту
-    // ========================================================================
-
-    // 1. Hardware Reset
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_reset(s_panel_handle), TAG, "reset failed");
+    // ====================================================================
+    // 4. Инициализация ST7789 по даташиту
+    // ====================================================================
+    
+    // Hardware reset
+    ret = esp_lcd_panel_reset(s_panel_handle);
+    ESP_RETURN_ON_ERROR(ret, TAG, "Failed to reset panel");
     vTaskDelay(pdMS_TO_TICKS(10));
-
-    // 2. Sleep Out
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_init(s_panel_handle), TAG, "init failed");
-    vTaskDelay(pdMS_TO_TICKS(120));
-
-    // 3. COLMOD — 16-bit RGB565
-    uint8_t colmod = 0x55;
-    esp_lcd_panel_io_tx_param(s_io_handle, 0x3A, &colmod, 1);
-    ESP_LOGI(TAG, "COLMOD=0x%02X", colmod);
-
-    // ============================================================
-    // КЛЮЧЕВЫЕ НАСТРОЙКИ ДЛЯ ТВОЕГО UI:
-    // ============================================================
     
-    // 4. Устанавливаем альбомную ориентацию (90°)
-    display_set_rotation(1);
+    // Wake up from sleep
+    ret = esp_lcd_panel_init(s_panel_handle);
+    ESP_RETURN_ON_ERROR(ret, TAG, "Failed to initialize panel");
+    vTaskDelay(pdMS_TO_TICKS(100));
     
-    // 5. ПРОБЛЕМА: белый = черный?
-    //    Если ДА — раскомментируй следующую строку:
-    // ESP_RETURN_ON_ERROR(esp_lcd_panel_invert_color(s_panel_handle, true), TAG, "invert ON");
+    // Установка ориентации: альбомная (320x240)
+    // swap_xy=true => 240x320 становится 320x240
+    // mirror_x=false, mirror_y=true => правильная ориентация
+    ret = esp_lcd_panel_swap_xy(s_panel_handle, true);
+    ESP_RETURN_ON_ERROR(ret, TAG, "Failed to swap XY");
     
-    //    Если НЕТ (белый = белый) — оставь как есть (инверсия выключена):
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_invert_color(s_panel_handle, false), TAG, "invert OFF");
-
-    // 6. Отключаем все лишние трансформации (работаем только через MADCTL)
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_swap_xy(s_panel_handle, false), TAG, "swap_xy failed");
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_mirror(s_panel_handle, false, false), TAG, "mirror failed");
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_set_gap(s_panel_handle, 0, 0), TAG, "set_gap failed");
-
-    // 7. Включаем дисплей
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_on_off(s_panel_handle, true), TAG, "disp_on failed");
-
-    // 8. Backlight
-    ESP_RETURN_ON_ERROR(backlight_init(), TAG, "backlight init failed");
-
-    // 9. Заливаем розовым фоном (как в твоем UI)
-    //    Розовый в RGB565: 0xF81F (ярко-розовый)
-    //    Или 0xFC1F (светло-розовый)
-    display_fill_color(0xF81F);  // Розовый фон
-    ESP_LOGI(TAG, "Display ready with PINK background!");
-
+    ret = esp_lcd_panel_mirror(s_panel_handle, false, true);
+    ESP_RETURN_ON_ERROR(ret, TAG, "Failed to mirror");
+    
+    // Инверсия цветов (если нужно)
+    ret = esp_lcd_panel_invert_color(s_panel_handle, false);
+    ESP_RETURN_ON_ERROR(ret, TAG, "Failed to set color inversion");
+    
+    // Включаем дисплей
+    ret = esp_lcd_panel_disp_on_off(s_panel_handle, true);
+    ESP_RETURN_ON_ERROR(ret, TAG, "Failed to turn on display");
+    vTaskDelay(pdMS_TO_TICKS(50));
+    
+    // ====================================================================
+    // 5. Инициализация подсветки
+    // ====================================================================
+    
+    ret = backlight_init();
+    ESP_RETURN_ON_ERROR(ret, TAG, "Failed to initialize backlight");
+    
+    ESP_LOGI(TAG, "Display initialized successfully (320x240, RGB565)");
     return ESP_OK;
 }
 
 // ============================================================================
-// Отрисовка
+// Рисование на дисплей
 // ============================================================================
 
-esp_err_t display_flush(int x1, int y1, int x2, int y2, const uint16_t *color_data)
+esp_err_t display_draw_bitmap(int x0, int y0, int x1, int y1, const uint16_t *color_data)
 {
     if (s_panel_handle == NULL) {
-        ESP_LOGE(TAG, "display_flush: not initialized");
+        ESP_LOGE(TAG, "display_draw_bitmap: Panel not initialized");
         return ESP_ERR_INVALID_STATE;
     }
-
-    spi_bus_lock();
-
-    esp_err_t err = esp_lcd_panel_draw_bitmap(s_panel_handle, x1, y1, x2, y2, color_data);
-    if (err == ESP_OK) {
-        if (xSemaphoreTake(s_flush_done_sem, pdMS_TO_TICKS(1000)) != pdTRUE) {
-            ESP_LOGE(TAG, "display_flush: DMA timeout!");
-            spi_bus_unlock();
-            return ESP_ERR_TIMEOUT;
-        }
-    } else {
-        ESP_LOGE(TAG, "display_flush: draw_bitmap failed: %s", esp_err_to_name(err));
-    }
-
-    spi_bus_unlock();
-    return err;
+    
+    // x0, y0 — верхний левый угол
+    // x1, y1 — нижний правый угол (exclusive)
+    return esp_lcd_panel_draw_bitmap(s_panel_handle, x0, y0, x1, y1, color_data);
 }
 
 // ============================================================================
@@ -236,22 +181,33 @@ esp_err_t display_flush(int x1, int y1, int x2, int y2, const uint16_t *color_da
 esp_err_t display_fill_color(uint16_t color)
 {
     size_t pixel_count = (size_t)DISPLAY_WIDTH * DISPLAY_HEIGHT;
-
+    
     uint16_t *framebuffer = heap_caps_malloc(pixel_count * sizeof(uint16_t), MALLOC_CAP_DMA);
     if (framebuffer == NULL) {
-        ESP_LOGE(TAG, "display_fill_color: malloc failed");
+        ESP_LOGE(TAG, "Failed to allocate framebuffer (%zu bytes)", pixel_count * sizeof(uint16_t));
         return ESP_ERR_NO_MEM;
     }
-
+    
+    // Быстрая заливка: используем 32-bit write
     uint32_t color32 = (uint32_t)color | ((uint32_t)color << 16);
     for (size_t i = 0; i < pixel_count / 2; i++) {
-        ((uint32_t*)framebuffer)[i] = color32;
+        ((uint32_t *)framebuffer)[i] = color32;
     }
     if (pixel_count % 2) {
         framebuffer[pixel_count - 1] = color;
     }
-
-    esp_err_t err = display_flush(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, framebuffer);
+    
+    esp_err_t err = display_draw_bitmap(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, framebuffer);
     free(framebuffer);
+    
     return err;
+}
+
+// ============================================================================
+// Получить handle панели (для продвинутого использования)
+// ============================================================================
+
+esp_lcd_panel_handle_t display_get_panel_handle(void)
+{
+    return s_panel_handle;
 }
