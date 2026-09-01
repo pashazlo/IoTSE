@@ -21,7 +21,6 @@ static void mark_dirty(gfx_canvas_t *c, int16_t x0, int16_t y0, int16_t x1, int1
     if (x0 >= x1 || y0 >= y1) return;
 
     if (c->dirty_x0 > c->dirty_x1) {
-        // was empty
         c->dirty_x0 = x0; c->dirty_y0 = y0;
         c->dirty_x1 = x1; c->dirty_y1 = y1;
     } else {
@@ -35,7 +34,7 @@ static void mark_dirty(gfx_canvas_t *c, int16_t x0, int16_t y0, int16_t x1, int1
 static void clear_dirty(gfx_canvas_t *c)
 {
     c->dirty_x0 = c->dirty_y0 = 0;
-    c->dirty_x1 = c->dirty_y1 = -1; // x0 > x1 => "empty" sentinel
+    c->dirty_x1 = c->dirty_y1 = -1;
 }
 
 // ---- lifecycle ----
@@ -107,7 +106,6 @@ void gfx_canvas_draw_rect(gfx_canvas_t *c, int16_t x, int16_t y, int16_t w, int1
 
 void gfx_canvas_draw_line(gfx_canvas_t *c, int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color)
 {
-    // Bresenham
     int16_t dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
     int16_t dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
     int16_t err = dx + dy;
@@ -143,7 +141,7 @@ void gfx_canvas_draw_circle(gfx_canvas_t *c, int16_t x0, int16_t y0, int16_t r, 
 
 void gfx_canvas_fill_circle(gfx_canvas_t *c, int16_t x0, int16_t y0, int16_t r, uint16_t color)
 {
-    gfx_canvas_draw_line(c, x0, y0 - r, x0, y0 + r, color); // center column
+    gfx_canvas_draw_line(c, x0, y0 - r, x0, y0 + r, color);
     int16_t f = 1 - r, ddF_x = 1, ddF_y = -2 * r, x = 0, y = r;
     while (x < y) {
         if (f >= 0) { y--; ddF_y += 2; f += ddF_y; }
@@ -172,7 +170,7 @@ void gfx_canvas_draw_bitmap_mono(gfx_canvas_t *c, int16_t x, int16_t y,
     
     int16_t bytes_per_row = (w + 7) / 8;
     
-    // Рисуем только видимую часть
+    // Рисуем только видимую часть (прямая запись в буфер)
     for (int16_t yy = start_y; yy < end_y; yy++) {
         uint16_t *row = &c->buf[(int32_t)(y + yy) * c->width + x];
         for (int16_t xx = start_x; xx < end_x; xx++) {
@@ -185,9 +183,6 @@ void gfx_canvas_draw_bitmap_mono(gfx_canvas_t *c, int16_t x, int16_t y,
     
     // Отмечаем dirty rect один раз (а не на каждый пиксель!)
     mark_dirty(c, x + start_x, y + start_y, x + end_x, y + end_y);
-}
-        }
-    }
 }
 
 void gfx_canvas_draw_bitmap_rgb565(gfx_canvas_t *c, int16_t x, int16_t y,
@@ -224,16 +219,13 @@ static void draw_char(gfx_canvas_t *c, char ch)
     if (!f || (uint8_t)ch < f->first || (uint8_t)ch > f->last) return;
 
     const gfx_glyph_t *g = &f->glyphs[(uint8_t)ch - f->first];
-    const uint8_t *bmp = f->bitmap; // indexed via g->bitmapOffset below
+    const uint8_t *bmp = f->bitmap;
 
     if (c->text_bg_opaque) {
         gfx_canvas_fill_rect(c, c->cursor_x, c->cursor_y + g->yOffset,
                               g->xAdvance, f->yAdvance, c->text_bg_color);
     }
 
-    // GFXfont glyph bits are a continuous stream (NOT byte-padded per row) —
-    // must track a running bit index across the whole glyph, matching
-    // Adafruit_GFX's actual drawChar() algorithm.
     uint16_t bo = g->bitmapOffset;
     uint8_t bits = 0, bit = 0;
     for (int16_t yy = 0; yy < g->height; yy++) {
@@ -253,7 +245,7 @@ static void draw_char(gfx_canvas_t *c, char ch)
 
 void gfx_canvas_print(gfx_canvas_t *c, const char *str)
 {
-    if (!c->font) return; // no font set — nothing to draw, avoid crashing
+    if (!c->font) return;
     while (*str) {
         if (*str == '\n') {
             c->cursor_x = 0;
@@ -280,14 +272,12 @@ void gfx_canvas_printf(gfx_canvas_t *c, const char *fmt, ...)
 esp_err_t gfx_canvas_flush(gfx_canvas_t *c)
 {
     if (c->dirty_x0 > c->dirty_x1) {
-        return ESP_OK; // nothing changed since last flush
+        return ESP_OK;
     }
 
     int16_t x0 = c->dirty_x0, y0 = c->dirty_y0, x1 = c->dirty_x1, y1 = c->dirty_y1;
     int16_t w = x1 - x0;
 
-    // display_flush needs a contiguous buffer; if the dirty rect isn't
-    // the full canvas width, copy the sub-rows into a scratch buffer.
     esp_err_t err;
     if (x0 == 0 && x1 == c->width) {
         err = display_flush(x0, y0, x1, y1, &c->buf[(int32_t)y0 * c->width]);
