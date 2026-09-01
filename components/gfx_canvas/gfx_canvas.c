@@ -160,7 +160,6 @@ void gfx_canvas_fill_circle(gfx_canvas_t *c, int16_t x0, int16_t y0, int16_t r, 
 void gfx_canvas_draw_bitmap_mono(gfx_canvas_t *c, int16_t x, int16_t y,
                                   const uint8_t *bitmap, int16_t w, int16_t h, uint16_t color)
 {
-    // Обрезаем по границам canvas
     int16_t start_x = (x < 0) ? -x : 0;
     int16_t start_y = (y < 0) ? -y : 0;
     int16_t end_x = (x + w > c->width) ? c->width - x : w;
@@ -170,7 +169,6 @@ void gfx_canvas_draw_bitmap_mono(gfx_canvas_t *c, int16_t x, int16_t y,
     
     int16_t bytes_per_row = (w + 7) / 8;
     
-    // Рисуем только видимую часть (прямая запись в буфер)
     for (int16_t yy = start_y; yy < end_y; yy++) {
         uint16_t *row = &c->buf[(int32_t)(y + yy) * c->width + x];
         for (int16_t xx = start_x; xx < end_x; xx++) {
@@ -181,12 +179,11 @@ void gfx_canvas_draw_bitmap_mono(gfx_canvas_t *c, int16_t x, int16_t y,
         }
     }
     
-    // Отмечаем dirty rect один раз (а не на каждый пиксель!)
     mark_dirty(c, x + start_x, y + start_y, x + end_x, y + end_y);
 }
 
 void gfx_canvas_draw_bitmap_rgb565(gfx_canvas_t *c, int16_t x, int16_t y,
-                                    const uint16_t *bitmap, int16_t w, int16_t h)
+                                   const uint16_t *bitmap, int16_t w, int16_t h)
 {
     for (int16_t yy = 0; yy < h; yy++) {
         for (int16_t xx = 0; xx < w; xx++) {
@@ -280,14 +277,16 @@ esp_err_t gfx_canvas_flush(gfx_canvas_t *c)
 
     esp_err_t err;
     if (x0 == 0 && x1 == c->width) {
-        err = display_flush(x0, y0, x1, y1, &c->buf[(int32_t)y0 * c->width]);
+        // Используем display_draw_bitmap вместо несуществующего display_flush
+        err = display_draw_bitmap(x0, y0, x1, y1, &c->buf[(int32_t)y0 * c->width]);
     } else {
         uint16_t *scratch = heap_caps_malloc((size_t)w * (y1 - y0) * sizeof(uint16_t), MALLOC_CAP_DMA);
         if (!scratch) return ESP_ERR_NO_MEM;
         for (int16_t yy = y0; yy < y1; yy++) {
             memcpy(&scratch[(yy - y0) * w], &c->buf[(int32_t)yy * c->width + x0], w * sizeof(uint16_t));
         }
-        err = display_flush(x0, y0, x1, y1, scratch);
+        // Используем display_draw_bitmap
+        err = display_draw_bitmap(x0, y0, x1, y1, scratch);
         free(scratch);
     }
 
