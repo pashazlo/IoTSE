@@ -35,18 +35,17 @@ static void draw_redteam_logo(gfx_canvas_t *canvas, int16_t cx, int16_t cy)
     gfx_canvas_draw_line(canvas, cx - 4, cy + 68, cx + 4, cy + 68, 0xFFFF);
 }
 // Отрисовка главного экрана
-   static void draw_screen_1(gfx_canvas_t *canvas)
+ static void draw_screen_1(gfx_canvas_t *canvas)
 {
     gfx_canvas_fill(canvas, 0xF81F);
-// Левая треть — красный
-    gfx_canvas_fill_rect(canvas, 0, 0, 106, 170, 0xF800);
+// верхняя и нижняя линии
+    gfx_canvas_draw_line(canvas, 0, 12, 319, 12, 0xFFFF);
+    gfx_canvas_draw_line(canvas, 0, 158, 319, 158, 0xFFFF);
 
-    // Средняя треть — зелёный
-    gfx_canvas_fill_rect(canvas, 106, 0, 106, 170, 0x07E0);
-
-    // Правая треть — синий
-    gfx_canvas_fill_rect(canvas, 212, 0, 108, 170, 0x001F);
+    // логотип справа
+    draw_redteam_logo(canvas, 230, 85); 
 }
+
 // ============================================================================
 // Задача UI
 // ============================================================================
