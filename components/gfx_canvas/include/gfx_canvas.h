@@ -14,7 +14,7 @@ extern "C" {
 
 #define GFX_RED       0xF800
 #define GFX_GREEN     0x07E0
-#define GFX_PINK      0xD809
+#define GFX_PINK      0xF81F
 #define GFX_BLACK     0x0000
 #define GFX_WHITE     0xFFFF
 #define GFX_BLUE      0x001F
