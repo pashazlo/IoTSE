@@ -7,20 +7,43 @@
 
 static const char *TAG = "UI";
 // ===== Массив битмапа из Lopaka =====
+static void draw_redteam_logo(gfx_canvas_t *canvas, int16_t cx, int16_t cy)
+{
+    // Внешний круг (глаз)
+    gfx_canvas_draw_circle(canvas, cx, cy, 42, 0xFFFF);
+    gfx_canvas_draw_circle(canvas, cx, cy, 41, 0xFFFF);   // толщина
 
+    // Средний круг (радужка)
+    gfx_canvas_draw_circle(canvas, cx, cy, 26, 0xFFFF);
+
+    // Зрачок
+    gfx_canvas_fill_circle(canvas, cx, cy, 11, 0xFFFF);
+
+    // Блик
+    gfx_canvas_fill_circle(canvas, cx - 5, cy - 5, 3, 0xD809);
+
+    // Прицел (4 линии)
+    gfx_canvas_draw_line(canvas, cx - 68, cy,     cx - 46, cy,     0xFFFF);
+    gfx_canvas_draw_line(canvas, cx + 46, cy,     cx + 68, cy,     0xFFFF);
+    gfx_canvas_draw_line(canvas, cx,     cy - 68, cx,     cy - 46, 0xFFFF);
+    gfx_canvas_draw_line(canvas, cx,     cy + 46, cx,     cy + 68, 0xFFFF);
+
+    // Небольшие засечки на концах прицела
+    gfx_canvas_draw_line(canvas, cx - 68, cy - 4, cx - 68, cy + 4, 0xFFFF);
+    gfx_canvas_draw_line(canvas, cx + 68, cy - 4, cx + 68, cy + 4, 0xFFFF);
+    gfx_canvas_draw_line(canvas, cx - 4, cy - 68, cx + 4, cy - 68, 0xFFFF);
+    gfx_canvas_draw_line(canvas, cx - 4, cy + 68, cx + 4, cy + 68, 0xFFFF);
+}
 // Отрисовка главного экрана
    static void draw_screen_1(gfx_canvas_t *canvas)
 {
     gfx_canvas_fill(canvas, 0xD809);
+// верхняя и нижняя линии
+    gfx_canvas_draw_line(canvas, 0, 12, 319, 12, 0xFFFF);
+    gfx_canvas_draw_line(canvas, 0, 158, 319, 158, 0xFFFF);
 
-    // рамка по самому краю экрана
-    gfx_canvas_draw_rect(canvas, 0, 0, 320, 170, 0xFFFF);
-
-    // маленький квадрат 50×50 в левом верхнем углу
-    gfx_canvas_fill_rect(canvas, 10, 20, 50, 50, 0xFFFF);
-
-    // линия посередине
-    gfx_canvas_draw_line(canvas, 0, 85, 319, 85, 0xFFFF);
+    // логотип справа
+    draw_redteam_logo(canvas, 230, 85); 
 }
 
 // ============================================================================
