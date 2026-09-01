@@ -17,17 +17,17 @@ static void draw_screen_1(gfx_canvas_t *canvas) {
     gfx_canvas_fill(canvas, GFX_PINK);  // 0xD809
     
     // 2. Верхняя линия (статус бар) — отступ 13 пикселей
-    gfx_canvas_draw_line(canvas, 0, 13, 319, 13, GFX_WHITE);
+    gfx_canvas_draw_line(canvas, 0, 13, 320, 13, GFX_WHITE);
     
     // 3. Нижняя линия (подсказки) — отступ 218 пикселей
-    gfx_canvas_draw_line(canvas, 0, 218, 319, 218, GFX_WHITE);
+    gfx_canvas_draw_line(canvas, 0, 150, 320, 150, GFX_WHITE);
     
     // 4. Череп DEDsec — рисуем с правильными координатами
     //    Битмап 320x240, canvas 320x240
     //    Начинаем с (0, 14) чтобы не перекрывать верхнюю линию
     gfx_canvas_draw_bitmap_mono(canvas, 0, 14,
                                 image_982f4ed7d64cf132d2647654eb5dff37_bits,
-                                320, 226,  // 240 - 14 = 226 (высота видимой части)
+                                320, 130,  // 240 - 14 = 226 (высота видимой части)
                                 GFX_WHITE);
 }
 
