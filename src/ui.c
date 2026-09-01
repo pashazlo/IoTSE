@@ -4,6 +4,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "assets/ibm_vga_font.h"
 
 static const char *TAG = "UI";
 // ===== Массив битмапа из Lopaka =====
