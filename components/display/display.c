@@ -112,9 +112,17 @@ esp_err_t display_init(void)
     }
     vTaskDelay(pdMS_TO_TICKS(100));
     
+    // --- ИСПРАВЛЕНИЯ ОРИЕНТАЦИИ, ЗУМА И ЦВЕТОВ ---
+    // Включаем swap_xy и зеркалирование X, чтобы дедсек встал ровно в правый нижний угол
     esp_lcd_panel_swap_xy(s_panel_handle, true);
-    esp_lcd_panel_mirror(s_panel_handle, false, true);
-    esp_lcd_panel_invert_color(s_panel_handle, false);
+    esp_lcd_panel_mirror(s_panel_handle, true, false);
+    
+    // Включаем инверсию цвета: фиксит розовый/оранжевый и белый/черный на ST7789
+    esp_lcd_panel_invert_color(s_panel_handle, true);
+    
+    // По желанию: если после заливки по краям экрана останется сдвиг, расскоментируй:
+    // esp_lcd_panel_set_gap(s_panel_handle, 0, 0);
+
     esp_lcd_panel_disp_on_off(s_panel_handle, true);
     
     spi_bus_unlock();
