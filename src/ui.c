@@ -26,7 +26,7 @@ static void draw_screen_1(gfx_canvas_t *canvas)
     //    Рисуем по центру по X, чуть ниже верхней линии
     //    Ширина спрайта 302, поэтому отступ (320-302)/2 = 9
     gfx_canvas_draw_bitmap_mono(canvas,
-                                9, 14,                    // x, y
+                                -7, 14,                    // x, y
                                 image_982f4ed7d64cf132d2647654eb5dff37_bits,
                                 302, 140,                 // ширина, высота (обрезаем снизу)
                                 0xFFFF);
