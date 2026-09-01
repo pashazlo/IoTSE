@@ -89,7 +89,6 @@ esp_lcd_panel_dev_config_t panel_config = {
     .reset_gpio_num = DISP_RST_GPIO,
     .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,   // ← было RGB
     .bits_per_pixel = 16,
-    .data_endian = LCD_RGB_DATA_ENDIAN_BIG,
 };
     
     ret = esp_lcd_new_panel_st7789(s_io_handle, &panel_config, &s_panel_handle);
@@ -146,12 +145,28 @@ esp_err_t display_draw_bitmap(int x0, int y0, int x1, int y1, const uint16_t *co
         ESP_LOGE(TAG, "display_draw_bitmap: Panel not initialized");
         return ESP_ERR_INVALID_STATE;
     }
-    
-    // Захватываем мьютекс, чтобы SD-карта не влезала в транзакцию кадров
+
+    // Встроенный ST7789-драйвер esp_lcd НЕ реализует .data_endian
+    // (подтверждено в документации ESP-IDF: "For drivers that do not
+    // support specifying data endian, this field would be ignored").
+    // ST7789 ждёт big-endian RGB565 по SPI, наши буферы little-endian —
+    // свопаем байты вручную здесь, централизованно, один раз.
+    size_t pixel_count = (size_t)(x1 - x0) * (size_t)(y1 - y0);
+    uint16_t *swapped = heap_caps_malloc(pixel_count * sizeof(uint16_t), MALLOC_CAP_DMA);
+    if (swapped == NULL) {
+        ESP_LOGE(TAG, "display_draw_bitmap: swap buffer alloc failed (%zu bytes)",
+                 pixel_count * sizeof(uint16_t));
+        return ESP_ERR_NO_MEM;
+    }
+    for (size_t i = 0; i < pixel_count; i++) {
+        swapped[i] = __builtin_bswap16(color_data[i]);
+    }
+
     spi_bus_lock();
-    esp_err_t err = esp_lcd_panel_draw_bitmap(s_panel_handle, x0, y0, x1, y1, color_data);
+    esp_err_t err = esp_lcd_panel_draw_bitmap(s_panel_handle, x0, y0, x1, y1, swapped);
     spi_bus_unlock();
-    
+
+    free(swapped);
     return err;
 }
 
