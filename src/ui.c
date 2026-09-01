@@ -1,7 +1,7 @@
 #include "ui.h"
 #include "display.h"
 #include "gfx_canvas.h"
-#include "ibm_vga_font.h"
+#include "assets/ibm_vga_font.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -9,20 +9,17 @@
 
 static const char *TAG = "UI";
 
-// Очередь событий
 static QueueHandle_t ui_queue = NULL;
 #define UI_QUEUE_LEN 10
 
-// Состояния экранов
 typedef enum {
     UI_SCREEN_SPLASH = 0,
     UI_SCREEN_MAIN_MENU,
-    UI_SCREEN_MODULE_APP // Состояние внутри выбранного модуля
+    UI_SCREEN_MODULE_APP
 } ui_screen_t;
 
 static ui_screen_t current_screen = UI_SCREEN_SPLASH;
 
-// ----- Структура и массив меню -----
 typedef void (*menu_cb_t)(void);
 
 typedef struct {
@@ -49,12 +46,12 @@ static const menu_item_t main_menu[] = {
 #define MENU_COUNT (sizeof(main_menu) / sizeof(main_menu[0]))
 static int8_t current_selected = 0;
 
-// ===== Отрисовка логотипа Red Team =====
+// Отрисовка логотипа Red Team
 static void draw_redteam_logo(gfx_canvas_t *canvas, int16_t cx, int16_t cy)
 {
     // Внешний круг (глаз)
     gfx_canvas_draw_circle(canvas, cx, cy, 42, 0xFFFF);
-    gfx_canvas_draw_circle(canvas, cx, cy, 41, 0xFFFF);   // толщина
+    gfx_canvas_draw_circle(canvas, cx, cy, 41, 0xFFFF);
 
     // Средний круг (радужка)
     gfx_canvas_draw_circle(canvas, cx, cy, 26, 0xFFFF);
@@ -65,39 +62,40 @@ static void draw_redteam_logo(gfx_canvas_t *canvas, int16_t cx, int16_t cy)
     // Блик
     gfx_canvas_fill_circle(canvas, cx - 5, cy - 5, 3, GFX_RGB565(0xF8, 0x00, 0x54));
 
-    // Прицел (4 линии)
+    // Прицел
     gfx_canvas_draw_line(canvas, cx - 68, cy,      cx - 46, cy,      0xFFFF);
     gfx_canvas_draw_line(canvas, cx + 46, cy,      cx + 68, cy,      0xFFFF);
     gfx_canvas_draw_line(canvas, cx,      cy - 68, cx,      cy - 46, 0xFFFF);
     gfx_canvas_draw_line(canvas, cx,      cy + 46, cx,      cy + 68, 0xFFFF);
 
-    // Небольшие засечки на концах прицела
+    // Засечки
     gfx_canvas_draw_line(canvas, cx - 68, cy - 4, cx - 68, cy + 4, 0xFFFF);
     gfx_canvas_draw_line(canvas, cx + 68, cy - 4, cx + 68, cy + 4, 0xFFFF);
     gfx_canvas_draw_line(canvas, cx - 4, cy - 68, cx + 4, cy - 68, 0xFFFF);
     gfx_canvas_draw_line(canvas, cx - 4, cy + 68, cx + 4, cy + 68, 0xFFFF);
 }
 
-// Отрисовка сплэш-экрана (заставка)
+// 1. Отрисовка заставки
 static void draw_splash_screen(gfx_canvas_t *canvas)
 {
+    // Полная заливка красным
     gfx_canvas_fill(canvas, GFX_RGB565(0xF8, 0x00, 0x54));
     
-    // верхняя и нижняя линии
+    // Верхняя и нижняя линии
     gfx_canvas_draw_line(canvas, 0, 12, DISPLAY_WIDTH - 1, 12, 0xFFFF);
     gfx_canvas_draw_line(canvas, 0, DISPLAY_HEIGHT - 12, DISPLAY_WIDTH - 1, DISPLAY_HEIGHT - 12, 0xFFFF);
 
-    // логотип справа
+    // Логотип по центру спрайта
     draw_redteam_logo(canvas, 230, DISPLAY_HEIGHT / 2); 
 }
 
-// Отрисовка главного меню
+// 2. Отрисовка главного меню
 static void draw_main_menu(gfx_canvas_t *canvas)
 {
-    // Черный фон для удобного чтения меню
+    // Важно: Полностью чистим весь холст черным цветом (убирает артефакты от заставки)
     gfx_canvas_fill(canvas, 0x0000);
 
-    // Заголовок
+    // Верхний разделитель
     gfx_canvas_draw_line(canvas, 0, 18, DISPLAY_WIDTH - 1, 18, GFX_RGB565(0xF8, 0x00, 0x54));
 
     // Вывод элементов меню
@@ -108,21 +106,21 @@ static void draw_main_menu(gfx_canvas_t *canvas)
         int16_t y = start_y + (i * line_height);
 
         if (i == current_selected) {
-            // Подсветка выбранного пункта прямоугольником
-            gfx_canvas_fill_rect(canvas, 5, y - 2, 180, line_height - 2, GFX_RGB565(0xF8, 0x00, 0x54));
-            // Отрисовка текста (белый текст на красном фоне)
-            // gfx_canvas_draw_str(10, y, main_menu[i].title, &Px437_IBM_VGA_8x14_2x8pt7b, 0xFFFF);
+            // Подсветка плашкой активного пункта
+            gfx_canvas_fill_rect(canvas, 5, y - 2, 140, line_height - 2, GFX_RGB565(0xF8, 0x00, 0x54));
+            
+            // Текст: белый на красном
+            gfx_canvas_draw_str(canvas, 10, y, main_menu[i].title, &ibm_vga_font, 0xFFFF);
         } else {
-            // Неактивный пункт меню
-            // gfx_canvas_draw_str(10, y, main_menu[i].title, &Px437_IBM_VGA_8x14_2x8pt7b, 0x8410);
+            // Текст: серый на черном
+            gfx_canvas_draw_str(canvas, 10, y, main_menu[i].title, &ibm_vga_font, 0x8410);
         }
     }
 
-    // Мини-логотип справа в меню для красоты
-    draw_redteam_logo(canvas, 260, 90);
+    // Логотип спрайта сдвинут левее (cx = 220 вместо 260), чтобы прицел радиуса 68px не вылезал за границы 320px экрана
+    draw_redteam_logo(canvas, 220, 90);
 }
 
-// Единый диспетчер отрисовки
 static void ui_render(gfx_canvas_t *canvas)
 {
     switch (current_screen) {
@@ -138,7 +136,6 @@ static void ui_render(gfx_canvas_t *canvas)
     gfx_canvas_flush(canvas);
 }
 
-// Потокобезопасные функции отправки событий
 BaseType_t ui_send_event(ui_event_t evt) {
     if (ui_queue == NULL) return pdFAIL;
     return xQueueSend(ui_queue, &evt, 0);
@@ -149,9 +146,6 @@ BaseType_t ui_send_event_from_isr(ui_event_t evt, BaseType_t *hp_task_woken) {
     return xQueueSendFromISR(ui_queue, &evt, hp_task_woken);
 }
 
-// ============================================================================
-// Задача UI
-// ============================================================================
 void ui_task(void *arg)
 {
     gfx_canvas_t canvas;
@@ -169,25 +163,20 @@ void ui_task(void *arg)
         return;
     }
 
-    ESP_LOGI(TAG, "Canvas initialized: %dx%d", canvas.width, canvas.height);
-
-    // 1. Показываем сплэш-экран
+    // 1. Splash screen
     current_screen = UI_SCREEN_SPLASH;
     ui_render(&canvas);
 
-    // Задержка 2 секунды перед переходом в меню
     vTaskDelay(pdMS_TO_TICKS(2000));
 
-    // 2. Переходим в главное меню
+    // 2. Main menu
     current_screen = UI_SCREEN_MAIN_MENU;
     ui_render(&canvas);
 
     ui_event_t evt;
 
-    // Главный событийный цикл задачи (0% CPU во время ожидания)
     while (1) {
         if (xQueueReceive(ui_queue, &evt, portMAX_DELAY) == pdTRUE) {
-            
             if (current_screen == UI_SCREEN_MAIN_MENU) {
                 switch (evt) {
                     case UI_EVT_UP:
