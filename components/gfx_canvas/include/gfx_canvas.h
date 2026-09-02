@@ -98,6 +98,9 @@ void gfx_canvas_draw_bitmap_rgb565(gfx_canvas_t *c, int16_t x, int16_t y,
 // --- Text (Adafruit_GFX-style cursor/print API) ---
 void gfx_canvas_set_font(gfx_canvas_t *c, const gfx_font_t *font);
 void gfx_canvas_set_cursor(gfx_canvas_t *c, int16_t x, int16_t y);
+// Convenience one-shot text draw: sets font/color/cursor and prints in one call.
+void gfx_canvas_draw_str(gfx_canvas_t *c, int16_t x, int16_t y,
+                          const char *str, const gfx_font_t *font, uint16_t color);
 void gfx_canvas_set_text_color(gfx_canvas_t *c, uint16_t fg);                      // transparent bg
 void gfx_canvas_set_text_color_bg(gfx_canvas_t *c, uint16_t fg, uint16_t bg);      // opaque bg
 void gfx_canvas_print(gfx_canvas_t *c, const char *str);
