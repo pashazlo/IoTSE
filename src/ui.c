@@ -44,7 +44,7 @@ static void draw_redteam_logo(gfx_canvas_t *canvas, int16_t cx, int16_t cy)
     gfx_canvas_draw_circle(canvas, cx, cy, 41, 0xFFFF);   // толщина обода
     gfx_canvas_draw_circle(canvas, cx, cy, 26, 0xFFFF);   // радужка
     gfx_canvas_fill_circle(canvas, cx, cy, 11, 0xFFFF);   // зрачок
-    gfx_canvas_fill_circle(canvas, cx - 5, cy - 5, 3, GFX_RGB565(0xF8, 0x00, 0x54)); // блик
+    gfx_canvas_fill_circle(canvas, cx - 5, cy - 5, 3, bg_color); // блик
 
     // Прицел: 4 луча + засечки на концах
     const int16_t arm = 68, gap = 46, tick = 4;
@@ -69,7 +69,7 @@ static void draw_splash_screen(gfx_canvas_t *canvas)
 static void draw_main_menu(gfx_canvas_t *canvas)
 {
     gfx_canvas_fill(canvas, 0x0000);
-    gfx_canvas_draw_line(canvas, 0, 18, DISPLAY_WIDTH - 1, 18, GFX_RGB565(0xF8, 0x00, 0x54));
+    gfx_canvas_draw_line(canvas, 0, 18, DISPLAY_WIDTH - 1, 18, 0xFFFF);
 
     const int16_t start_y = 35;
     const int16_t line_h  = 20;
