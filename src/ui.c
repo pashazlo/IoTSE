@@ -8,24 +8,16 @@
 #include "esp_log.h"
 
 static const char *TAG = "UI";
+#define UI_FONT (&Px437_IBM_VGA_8x14_2x8pt7b)   // короткий алиас на длинное имя шрифта
 
 static QueueHandle_t ui_queue = NULL;
 #define UI_QUEUE_LEN 10
 
-typedef enum {
-    UI_SCREEN_SPLASH = 0,
-    UI_SCREEN_MAIN_MENU,
-    UI_SCREEN_MODULE_APP
-} ui_screen_t;
-
+typedef enum { UI_SCREEN_SPLASH = 0, UI_SCREEN_MAIN_MENU, UI_SCREEN_MODULE_APP } ui_screen_t;
 static ui_screen_t current_screen = UI_SCREEN_SPLASH;
 
 typedef void (*menu_cb_t)(void);
-
-typedef struct {
-    const char *title;
-    menu_cb_t callback;
-} menu_item_t;
+typedef struct { const char *title; menu_cb_t callback; } menu_item_t;
 
 static void action_ir(void)       { ESP_LOGI(TAG, "Opened IR"); }
 static void action_settings(void) { ESP_LOGI(TAG, "Opened Settings"); }
@@ -40,110 +32,77 @@ static const menu_item_t main_menu[] = {
     {"NRF24",        action_nrf},
     {"Wi-Fi",        action_wifi},
     {"Bluetooth",    action_bt},
-    {"Settings",     action_settings}
+    {"Settings",     action_settings},
 };
-
 #define MENU_COUNT (sizeof(main_menu) / sizeof(main_menu[0]))
 static int8_t current_selected = 0;
 
-// Отрисовка логотипа Red Team
+// Отрисовка логотипа Red Team (глаз + прицел)
 static void draw_redteam_logo(gfx_canvas_t *canvas, int16_t cx, int16_t cy)
 {
-    // Внешний круг (глаз)
     gfx_canvas_draw_circle(canvas, cx, cy, 42, 0xFFFF);
-    gfx_canvas_draw_circle(canvas, cx, cy, 41, 0xFFFF);
+    gfx_canvas_draw_circle(canvas, cx, cy, 41, 0xFFFF);   // толщина обода
+    gfx_canvas_draw_circle(canvas, cx, cy, 26, 0xFFFF);   // радужка
+    gfx_canvas_fill_circle(canvas, cx, cy, 11, 0xFFFF);   // зрачок
+    gfx_canvas_fill_circle(canvas, cx - 5, cy - 5, 3, GFX_RGB565(0xF8, 0x00, 0x54)); // блик
 
-    // Средний круг (радужка)
-    gfx_canvas_draw_circle(canvas, cx, cy, 26, 0xFFFF);
-
-    // Зрачок
-    gfx_canvas_fill_circle(canvas, cx, cy, 11, 0xFFFF);
-
-    // Блик
-    gfx_canvas_fill_circle(canvas, cx - 5, cy - 5, 3, GFX_RGB565(0xF8, 0x00, 0x54));
-
-    // Прицел
-    gfx_canvas_draw_line(canvas, cx - 68, cy,      cx - 46, cy,      0xFFFF);
-    gfx_canvas_draw_line(canvas, cx + 46, cy,      cx + 68, cy,      0xFFFF);
-    gfx_canvas_draw_line(canvas, cx,      cy - 68, cx,      cy - 46, 0xFFFF);
-    gfx_canvas_draw_line(canvas, cx,      cy + 46, cx,      cy + 68, 0xFFFF);
-
-    // Засечки
-    gfx_canvas_draw_line(canvas, cx - 68, cy - 4, cx - 68, cy + 4, 0xFFFF);
-    gfx_canvas_draw_line(canvas, cx + 68, cy - 4, cx + 68, cy + 4, 0xFFFF);
-    gfx_canvas_draw_line(canvas, cx - 4, cy - 68, cx + 4, cy - 68, 0xFFFF);
-    gfx_canvas_draw_line(canvas, cx - 4, cy + 68, cx + 4, cy + 68, 0xFFFF);
+    // Прицел: 4 луча + засечки на концах
+    const int16_t arm = 68, gap = 46, tick = 4;
+    gfx_canvas_draw_line(canvas, cx - arm, cy, cx - gap, cy, 0xFFFF);
+    gfx_canvas_draw_line(canvas, cx + gap, cy, cx + arm, cy, 0xFFFF);
+    gfx_canvas_draw_line(canvas, cx, cy - arm, cx, cy - gap, 0xFFFF);
+    gfx_canvas_draw_line(canvas, cx, cy + gap, cx, cy + arm, 0xFFFF);
+    gfx_canvas_draw_line(canvas, cx - arm, cy - tick, cx - arm, cy + tick, 0xFFFF);
+    gfx_canvas_draw_line(canvas, cx + arm, cy - tick, cx + arm, cy + tick, 0xFFFF);
+    gfx_canvas_draw_line(canvas, cx - tick, cy - arm, cx + tick, cy - arm, 0xFFFF);
+    gfx_canvas_draw_line(canvas, cx - tick, cy + arm, cx + tick, cy + arm, 0xFFFF);
 }
 
-// 1. Отрисовка заставки
 static void draw_splash_screen(gfx_canvas_t *canvas)
 {
-    // Полная заливка красным
     gfx_canvas_fill(canvas, GFX_RGB565(0xF8, 0x00, 0x54));
-    
-    // Верхняя и нижняя линии
     gfx_canvas_draw_line(canvas, 0, 12, DISPLAY_WIDTH - 1, 12, 0xFFFF);
     gfx_canvas_draw_line(canvas, 0, DISPLAY_HEIGHT - 12, DISPLAY_WIDTH - 1, DISPLAY_HEIGHT - 12, 0xFFFF);
-
-    // Логотип по центру спрайта
-    draw_redteam_logo(canvas, 230, DISPLAY_HEIGHT / 2); 
+    draw_redteam_logo(canvas, 230, DISPLAY_HEIGHT / 2);
 }
 
-// 2. Отрисовка главного меню
 static void draw_main_menu(gfx_canvas_t *canvas)
 {
-    // Важно: Полностью чистим весь холст черным цветом (убирает артефакты от заставки)
     gfx_canvas_fill(canvas, 0x0000);
-
-    // Верхний разделитель
     gfx_canvas_draw_line(canvas, 0, 18, DISPLAY_WIDTH - 1, 18, GFX_RGB565(0xF8, 0x00, 0x54));
 
-    // Вывод элементов меню
-    int16_t start_y = 28;
-    int16_t line_height = 20;
+    const int16_t start_y = 28, line_h = 20;
 
     for (uint8_t i = 0; i < MENU_COUNT; i++) {
-        int16_t y = start_y + (i * line_height);
+        int16_t y = start_y + (i * line_h);
+        bool active = (i == current_selected);
 
-        if (i == current_selected) {
-            // Подсветка плашкой активного пункта
-            gfx_canvas_fill_rect(canvas, 5, y - 2, 140, line_height - 2, GFX_RGB565(0xF8, 0x00, 0x54));
-            
-            // Текст: белый на красном
-            gfx_canvas_draw_str(canvas, 10, y, main_menu[i].title, &ibm_vga_font, 0xFFFF);
-        } else {
-            // Текст: серый на черном
-            gfx_canvas_draw_str(canvas, 10, y, main_menu[i].title, &ibm_vga_font, 0x8410);
+        if (active) {
+            gfx_canvas_fill_rect(canvas, 5, y - 2, 140, line_h - 2, GFX_RGB565(0xF8, 0x00, 0x54));
         }
+        gfx_canvas_draw_str(canvas, 10, y, main_menu[i].title, UI_FONT, active ? 0xFFFF : 0x8410);
     }
 
-    // Логотип спрайта сдвинут левее (cx = 220 вместо 260), чтобы прицел радиуса 68px не вылезал за границы 320px экрана
+    // cx=220 (не 260) — прицел радиуса 68px иначе вылезает за границы 320px экрана
     draw_redteam_logo(canvas, 220, 90);
 }
 
 static void ui_render(gfx_canvas_t *canvas)
 {
     switch (current_screen) {
-        case UI_SCREEN_SPLASH:
-            draw_splash_screen(canvas);
-            break;
-        case UI_SCREEN_MAIN_MENU:
-            draw_main_menu(canvas);
-            break;
-        default:
-            break;
+        case UI_SCREEN_SPLASH:     draw_splash_screen(canvas); break;
+        case UI_SCREEN_MAIN_MENU:  draw_main_menu(canvas);     break;
+        default: break;
     }
     gfx_canvas_flush(canvas);
 }
 
 BaseType_t ui_send_event(ui_event_t evt) {
-    if (ui_queue == NULL) return pdFAIL;
-    return xQueueSend(ui_queue, &evt, 0);
+    return ui_queue ? xQueueSend(ui_queue, &evt, 0) : pdFAIL;
 }
 
 BaseType_t ui_send_event_from_isr(ui_event_t evt, BaseType_t *hp_task_woken) {
-    if (ui_queue == NULL) return pdFAIL;
-    return xQueueSendFromISR(ui_queue, &evt, hp_task_woken);
+    return ui_queue ? xQueueSendFromISR(ui_queue, &evt, hp_task_woken) : pdFAIL;
 }
 
 void ui_task(void *arg)
@@ -163,44 +122,32 @@ void ui_task(void *arg)
         return;
     }
 
-    // 1. Splash screen
     current_screen = UI_SCREEN_SPLASH;
     ui_render(&canvas);
-
     vTaskDelay(pdMS_TO_TICKS(2000));
 
-    // 2. Main menu
     current_screen = UI_SCREEN_MAIN_MENU;
     ui_render(&canvas);
 
     ui_event_t evt;
-
     while (1) {
-        if (xQueueReceive(ui_queue, &evt, portMAX_DELAY) == pdTRUE) {
-            if (current_screen == UI_SCREEN_MAIN_MENU) {
-                switch (evt) {
-                    case UI_EVT_UP:
-                        current_selected--;
-                        if (current_selected < 0) current_selected = MENU_COUNT - 1;
-                        ui_render(&canvas);
-                        break;
+        if (xQueueReceive(ui_queue, &evt, portMAX_DELAY) != pdTRUE) continue;
+        if (current_screen != UI_SCREEN_MAIN_MENU) continue;
 
-                    case UI_EVT_DOWN:
-                        current_selected++;
-                        if (current_selected >= MENU_COUNT) current_selected = 0;
-                        ui_render(&canvas);
-                        break;
-
-                    case UI_EVT_SELECT:
-                        if (main_menu[current_selected].callback) {
-                            main_menu[current_selected].callback();
-                        }
-                        break;
-
-                    default:
-                        break;
-                }
-            }
+        switch (evt) {
+            case UI_EVT_UP:
+                current_selected = (current_selected <= 0) ? MENU_COUNT - 1 : current_selected - 1;
+                ui_render(&canvas);
+                break;
+            case UI_EVT_DOWN:
+                current_selected = (current_selected >= (int8_t)MENU_COUNT - 1) ? 0 : current_selected + 1;
+                ui_render(&canvas);
+                break;
+            case UI_EVT_SELECT:
+                if (main_menu[current_selected].callback) main_menu[current_selected].callback();
+                break;
+            default:
+                break;
         }
     }
 
