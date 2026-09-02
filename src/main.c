@@ -4,7 +4,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "ui.h"   // <-- было #iclude, исправлено
-
+#include "buttons.h"
 static const char *TAG = "app_main";
 
 /**
