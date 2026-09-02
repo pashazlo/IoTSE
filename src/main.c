@@ -47,7 +47,7 @@ ESP_LOGI(TAG, "Инициализация кнопок");
         return;
     }
     ESP_LOGI(TAG, "✓ Дисплей инициализирован");
- BaseType_t task_created = xTaskCreated(
+ BaseType_t task_created = xTaskCreate(
     buttons_task,
     "buttons",
     2048,
