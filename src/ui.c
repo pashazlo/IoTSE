@@ -71,19 +71,24 @@ static void draw_main_menu(gfx_canvas_t *canvas)
     gfx_canvas_fill(canvas, 0x0000);
     gfx_canvas_draw_line(canvas, 0, 18, DISPLAY_WIDTH - 1, 18, GFX_RGB565(0xF8, 0x00, 0x54));
 
-    const int16_t start_y = 28, line_h = 20;
+    const int16_t start_y = 25;
+    const int16_t line_h  = 20;
 
     for (uint8_t i = 0; i < MENU_COUNT; i++) {
         int16_t y = start_y + (i * line_h);
         bool active = (i == current_selected);
 
         if (active) {
-            gfx_canvas_fill_rect(canvas, 5, y - 2, 140, line_h - 2, GFX_RGB565(0xF8, 0x00, 0x54));
+            // Выбранный пункт: [Текст]
+            char buf[32];
+            snprintf(buf, sizeof(buf), "[%s]", main_menu[i].title);
+            gfx_canvas_draw_str(canvas, 10, y, buf, UI_FONT, 0xFFFF);
+        } else {
+            // Обычный пункт
+            gfx_canvas_draw_str(canvas, 10, y, main_menu[i].title, UI_FONT, 0x8410);
         }
-        gfx_canvas_draw_str(canvas, 10, y, main_menu[i].title, UI_FONT, active ? 0xFFFF : 0x8410);
     }
 
-    // cx=220 (не 260) — прицел радиуса 68px иначе вылезает за границы 320px экрана
     draw_redteam_logo(canvas, 220, 90);
 }
 
