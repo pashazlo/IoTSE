@@ -71,7 +71,7 @@ static void draw_main_menu(gfx_canvas_t *canvas)
     gfx_canvas_fill(canvas, 0x0000);
     gfx_canvas_draw_line(canvas, 0, 18, DISPLAY_WIDTH - 1, 18, 0xFFFF);
 
-    const int16_t start_y = 35;
+    const int16_t start_y = 40;
     const int16_t line_h  = 20;
 
     for (uint8_t i = 0; i < MENU_COUNT; i++) {
