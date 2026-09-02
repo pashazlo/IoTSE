@@ -193,7 +193,14 @@ void gfx_canvas_draw_bitmap_rgb565(gfx_canvas_t *c, int16_t x, int16_t y,
 }
 
 // ---- text ----
-
+void gfx_canvas_draw_str(gfx_canvas_t *c, int16_t x, int16_t y,
+                          const char *str, const gfx_font_t *font, uint16_t color)
+{
+    gfx_canvas_set_font(c, font);
+    gfx_canvas_set_text_color(c, color);
+    gfx_canvas_set_cursor(c, x, y);
+    gfx_canvas_print(c, str);
+}
 void gfx_canvas_set_font(gfx_canvas_t *c, const gfx_font_t *font) { c->font = font; }
 void gfx_canvas_set_cursor(gfx_canvas_t *c, int16_t x, int16_t y) { c->cursor_x = x; c->cursor_y = y; }
 
