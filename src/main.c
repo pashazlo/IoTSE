@@ -47,6 +47,14 @@ ESP_LOGI(TAG, "Инициализация кнопок");
         return;
     }
     ESP_LOGI(TAG, "✓ Дисплей инициализирован");
+ BaseType_t task_created = xTaskCreated(
+    buttons_task,
+    "buttons",
+    2048,
+    NULL,
+    6,
+    NULL
+ );
 
     // ========================================================================
     // 3. Создание задачи интерфейса (ui_task)
