@@ -38,7 +38,7 @@ static const menu_item_t main_menu[] = {
 static int8_t current_selected = 0;
 
 // Отрисовка логотипа Red Team (глаз + прицел)
-static void draw_redteam_logo(gfx_canvas_t *canvas, int16_t cx, int16_t cy)
+static void draw_redteam_logo(gfx_canvas_t *canvas, int16_t cx, int16_t cy, uint16_t bg_color)
 {
     gfx_canvas_draw_circle(canvas, cx, cy, 42, 0xFFFF);
     gfx_canvas_draw_circle(canvas, cx, cy, 41, 0xFFFF);   // толщина обода
@@ -63,7 +63,7 @@ static void draw_splash_screen(gfx_canvas_t *canvas)
     gfx_canvas_fill(canvas, GFX_RGB565(0xF8, 0x00, 0x54));
     gfx_canvas_draw_line(canvas, 0, 12, DISPLAY_WIDTH - 1, 12, 0xFFFF);
     gfx_canvas_draw_line(canvas, 0, DISPLAY_HEIGHT - 12, DISPLAY_WIDTH - 1, DISPLAY_HEIGHT - 12, 0xFFFF);
-    draw_redteam_logo(canvas, 230, DISPLAY_HEIGHT / 2);
+    draw_redteam_logo(canvas, 230, DISPLAY_HEIGHT / 2, GFX_RGB565(0xF8, 0x00, 0x54));
 }
 
 static void draw_main_menu(gfx_canvas_t *canvas)
@@ -89,7 +89,7 @@ static void draw_main_menu(gfx_canvas_t *canvas)
         }
     }
 
-    draw_redteam_logo(canvas, 220, 90);
+    draw_redteam_logo(canvas, 220, 90, 0x0000);
 }
 
 static void ui_render(gfx_canvas_t *canvas)
