@@ -10,12 +10,13 @@ extern "C" {
 
 typedef enum {
     UI_EVT_NONE = 0,
-    UI_EVT_UP,
+   UI_EVT_UP,
     UI_EVT_DOWN,
+    UI_EVT_LEFT,
+    UI_EVT_RIGHT,
     UI_EVT_SELECT,
-    UI_EVT_BACK
-} ui_event_t;
 
+} ui_event_t;
 // Задача UI
 void ui_task(void *arg);
 
