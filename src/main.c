@@ -37,6 +37,66 @@ ESP_LOGI(TAG, "Инициализация кнопок");
         ESP_LOGE(TAG, "Ошибка инициализации кнопок: %s", esp_err_to_name(err));
         return;
     }
+    static void input_bridge_task(void *arg)
+{
+    QueueHandle_t button_queue = buttons_get_queue();
+
+    if (button_queue == NULL) {
+        ESP_LOGE(TAG, "Button queue is NULL");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    button_event_t button_evt;
+
+    while (1) {
+
+        if (xQueueReceive(button_queue, &button_evt, portMAX_DELAY) == pdTRUE) {
+
+            // Нас интересует только момент нажатия.
+            // RELEASED пока игнорируем.
+            if (button_evt.kind != BTN_EVENT_PRESSED) {
+                continue;
+            }
+
+            switch (button_evt.button) {
+
+                case BTN_UP:
+                    ESP_LOGI(TAG, "BTN_UP -> UI_EVT_UP");
+                    ui_send_event(UI_EVT_UP);
+                    break;
+
+
+                case BTN_DOWN:
+                    ESP_LOGI(TAG, "BTN_DOWN -> UI_EVT_DOWN");
+                    ui_send_event(UI_EVT_DOWN);
+                    break;
+
+
+                case BTN_LEFT:
+                    ESP_LOGI(TAG, "BTN_LEFT -> UI_EVT_LEFT");
+                    ui_send_event(UI_EVT_LEFT);
+                    break;
+
+
+                case BTN_RIGHT:
+                    ESP_LOGI(TAG, "BTN_RIGHT -> UI_EVT_RIGHT");
+                    ui_send_event(UI_EVT_RIGHT);
+                    break;
+
+
+                case BTN_SELECT:
+                    ESP_LOGI(TAG, "BTN_SELECT -> UI_EVT_SELECT");
+                    ui_send_event(UI_EVT_SELECT);
+                    break;
+
+
+                default:
+                    break;
+            }
+        }
+    }
+}
     // ========================================================================
     // 2. Инициализация дисплея ST7789
     // ========================================================================
