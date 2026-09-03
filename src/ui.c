@@ -139,21 +139,41 @@ void ui_task(void *arg)
         if (xQueueReceive(ui_queue, &evt, portMAX_DELAY) != pdTRUE) continue;
         if (current_screen != UI_SCREEN_MAIN_MENU) continue;
 
-        switch (evt) {
-            case UI_EVT_UP:
-                current_selected = (current_selected <= 0) ? MENU_COUNT - 1 : current_selected - 1;
-                ui_render(&canvas);
-                break;
-            case UI_EVT_DOWN:
-                current_selected = (current_selected >= (int8_t)MENU_COUNT - 1) ? 0 : current_selected + 1;
-                ui_render(&canvas);
-                break;
-            case UI_EVT_SELECT:
-                if (main_menu[current_selected].callback) main_menu[current_selected].callback();
-                break;
-            default:
-                break;
+      switch (evt) {
+
+    case UI_EVT_UP:
+        current_selected = (current_selected <= 0)
+            ? MENU_COUNT - 1
+            : current_selected - 1;
+
+        ui_render(&canvas);
+        break;
+
+    case UI_EVT_DOWN:
+        current_selected = (current_selected >= (int8_t)MENU_COUNT - 1)
+            ? 0
+            : current_selected + 1;
+
+        ui_render(&canvas);
+        break;
+
+    case UI_EVT_LEFT:
+        ESP_LOGI(TAG, "UI LEFT");
+        break;
+
+    case UI_EVT_RIGHT:
+        ESP_LOGI(TAG, "UI RIGHT");
+        break;
+          
+    case UI_EVT_SELECT:
+        if (main_menu[current_selected].callback) {
+            main_menu[current_selected].callback();
         }
+        break;
+          
+    default:
+        break;
+}
     }
 
     gfx_canvas_deinit(&canvas);
