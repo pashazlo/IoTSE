@@ -17,7 +17,7 @@
 
 static const char *TAG = "UI";
 
-#define UI_FONT (Px437_IBM_VGA_8x14_2x8pt7b7)
+#define UI_FONT (&Px437_IBM_VGA_8x14_2x8pt7b)
 
 #define UI_QUEUE_LEN 10
 
