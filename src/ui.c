@@ -382,8 +382,8 @@ static void draw_ir_menu(gfx_canvas_t *canvas)
     gfx_canvas_draw_str(
         canvas,
         10,
-        40,
-        "[IR Remote]",
+        9,
+        "IR Remote",
         UI_FONT,
         0xFFFF
     );
@@ -393,7 +393,7 @@ static void draw_ir_menu(gfx_canvas_t *canvas)
         canvas,
         10,
         65,
-        "Прием / Передача",
+        "TX/RX",
         UI_FONT,
         0x8410
     );
@@ -403,7 +403,7 @@ static void draw_ir_menu(gfx_canvas_t *canvas)
         canvas,
         10,
         85,
-        "Записанные сигналы",
+        "saved IR signal",
         UI_FONT,
         0x8410
     );
@@ -413,7 +413,7 @@ static void draw_ir_menu(gfx_canvas_t *canvas)
         canvas,
         10,
         105,
-        "Протоколы",
+        "Protocols",
         UI_FONT,
         0x8410
     );
@@ -425,7 +425,7 @@ static void draw_ir_menu(gfx_canvas_t *canvas)
         canvas,
         10,
         140,
-        "[< BACK]",
+        "< BACK",
         UI_FONT,
         0x8410
     );
@@ -456,8 +456,8 @@ static void draw_wifi_menu(gfx_canvas_t *canvas)
     gfx_canvas_draw_str(
         canvas,
         10,
-        40,
-        "[Wi-Fi]",
+        9,
+        "Wi-Fi",
         UI_FONT,
         0xFFFF
     );
@@ -467,7 +467,7 @@ static void draw_wifi_menu(gfx_canvas_t *canvas)
         canvas,
         10,
         65,
-        "Сканирование",
+        "scan",
         UI_FONT,
         0x8410
     );
@@ -477,7 +477,7 @@ static void draw_wifi_menu(gfx_canvas_t *canvas)
         canvas,
         10,
         85,
-        "Сети",
+        "networks",
         UI_FONT,
         0x8410
     );
@@ -487,7 +487,7 @@ static void draw_wifi_menu(gfx_canvas_t *canvas)
         canvas,
         10,
         105,
-        "Настройки",
+        "settings",
         UI_FONT,
         0x8410
     );
@@ -499,7 +499,7 @@ static void draw_wifi_menu(gfx_canvas_t *canvas)
         canvas,
         10,
         140,
-        "[< BACK]",
+        "< BACK",
         UI_FONT,
         0x8410
     );
@@ -548,7 +548,7 @@ static void draw_simple_screen(
         canvas,
         10,
         100,
-        "[< BACK]",
+        "< BACK",
         UI_FONT,
         0x8410
     );
@@ -595,7 +595,7 @@ static void ui_render(gfx_canvas_t *canvas)
 
             draw_simple_screen(
                 canvas,
-                "[RF (Sub-GHz)]"
+                "RF (Sub-GHz)"
             );
 
             break;
@@ -605,7 +605,7 @@ static void ui_render(gfx_canvas_t *canvas)
 
             draw_simple_screen(
                 canvas,
-                "[NRF24]"
+                "NRF24"
             );
 
             break;
@@ -615,7 +615,7 @@ static void ui_render(gfx_canvas_t *canvas)
 
             draw_simple_screen(
                 canvas,
-                "[Bluetooth]"
+                "Bluetooth"
             );
 
             break;
@@ -625,7 +625,7 @@ static void ui_render(gfx_canvas_t *canvas)
 
             draw_simple_screen(
                 canvas,
-                "[Settings]"
+                "Settings"
             );
 
             break;
