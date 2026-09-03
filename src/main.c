@@ -47,19 +47,7 @@ ESP_LOGI(TAG, "Инициализация кнопок");
         return;
     }
     ESP_LOGI(TAG, "✓ Дисплей инициализирован");
- BaseType_t task_created = xTaskCreate(
-    buttons_task,
-    "buttons",
-    2048,
-    NULL,
-    5,
-    NULL
- );
-    if (task_created != pdPASS) {
-        ESP_LOGE(TAG, "Не удалось создать задачу buttons");
-        return;
-    }
-    ESP_LOGI(TAG, "✓ Задача buttons создана");
+
 
 
     // ========================================================================
