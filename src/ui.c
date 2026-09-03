@@ -17,7 +17,7 @@
 
 static const char *TAG = "UI";
 
-#define UI_FONT (&Px437_IBM_VGA_8x14_2x8pt7b)
+#define UI_FONT (&Px437_IBM_VGA_8x14_2x8pt7b7)
 
 #define UI_QUEUE_LEN 10
 
@@ -30,9 +30,16 @@ static QueueHandle_t ui_queue = NULL;
 
 
 typedef enum {
-    UI_SCREEN_SPLASH = 0,
+    UI_SCREEN_SPLASH,
     UI_SCREEN_MAIN_MENU,
-    UI_SCREEN_MODULE_APP
+
+    UI_SCREEN_IR_MENU,
+    UI_SCREEN_RF_MENU,
+    UI_SCREEN_NRF_MENU,
+    UI_SCREEN_WIFI_MENU,
+    UI_SCREEN_BT_MENU,
+    UI_SCREEN_SETTINGS_MENU,
+
 } ui_screen_t;
 
 
@@ -59,36 +66,42 @@ typedef struct {
 static void action_ir(void)
 {
     ESP_LOGI(TAG, "Opened IR");
+    current_screen = UI_SCREEN_IR_MENU;
 }
 
 
 static void action_settings(void)
 {
     ESP_LOGI(TAG, "Opened Settings");
+    current_screen = UI_SCREEN_SETTINGS_MENU;
 }
 
 
 static void action_rf(void)
 {
     ESP_LOGI(TAG, "Opened RF (Sub-GHz)");
+    current_screen = UI_SCREEN_RF_MENU;
 }
 
 
 static void action_nrf(void)
 {
     ESP_LOGI(TAG, "Opened NRF24");
+    current_screen = UI_SCREEN_NRF_MENU;
 }
 
 
 static void action_wifi(void)
 {
     ESP_LOGI(TAG, "Opened Wi-Fi");
+    current_screen = UI_SCREEN_WIFI_MENU;
 }
 
 
 static void action_bt(void)
 {
     ESP_LOGI(TAG, "Opened Bluetooth");
+    current_screen = UI_SCREEN_BT_MENU;
 }
 
 
@@ -346,6 +359,203 @@ static void draw_main_menu(gfx_canvas_t *canvas)
 
 
 // ============================================================================
+// IR Menu
+// ============================================================================
+
+static void draw_ir_menu(gfx_canvas_t *canvas)
+{
+    gfx_canvas_fill(canvas, 0x0000);
+
+
+    // Top border
+
+    gfx_canvas_draw_line(
+        canvas,
+        0,
+        18,
+        DISPLAY_WIDTH - 1,
+        18,
+        0xFFFF
+    );
+
+
+    gfx_canvas_draw_str(
+        canvas,
+        10,
+        40,
+        "[IR Remote]",
+        UI_FONT,
+        0xFFFF
+    );
+
+
+    gfx_canvas_draw_str(
+        canvas,
+        10,
+        65,
+        "Прием / Передача",
+        UI_FONT,
+        0x8410
+    );
+
+
+    gfx_canvas_draw_str(
+        canvas,
+        10,
+        85,
+        "Записанные сигналы",
+        UI_FONT,
+        0x8410
+    );
+
+
+    gfx_canvas_draw_str(
+        canvas,
+        10,
+        105,
+        "Протоколы",
+        UI_FONT,
+        0x8410
+    );
+
+
+    // Back
+
+    gfx_canvas_draw_str(
+        canvas,
+        10,
+        140,
+        "[< BACK]",
+        UI_FONT,
+        0x8410
+    );
+}
+
+
+// ============================================================================
+// Wi-Fi Menu
+// ============================================================================
+
+static void draw_wifi_menu(gfx_canvas_t *canvas)
+{
+    gfx_canvas_fill(canvas, 0x0000);
+
+
+    // Top border
+
+    gfx_canvas_draw_line(
+        canvas,
+        0,
+        18,
+        DISPLAY_WIDTH - 1,
+        18,
+        0xFFFF
+    );
+
+
+    gfx_canvas_draw_str(
+        canvas,
+        10,
+        40,
+        "[Wi-Fi]",
+        UI_FONT,
+        0xFFFF
+    );
+
+
+    gfx_canvas_draw_str(
+        canvas,
+        10,
+        65,
+        "Сканирование",
+        UI_FONT,
+        0x8410
+    );
+
+
+    gfx_canvas_draw_str(
+        canvas,
+        10,
+        85,
+        "Сети",
+        UI_FONT,
+        0x8410
+    );
+
+
+    gfx_canvas_draw_str(
+        canvas,
+        10,
+        105,
+        "Настройки",
+        UI_FONT,
+        0x8410
+    );
+
+
+    // Back
+
+    gfx_canvas_draw_str(
+        canvas,
+        10,
+        140,
+        "[< BACK]",
+        UI_FONT,
+        0x8410
+    );
+}
+
+
+// ============================================================================
+// Simple Module Screen
+// ============================================================================
+
+static void draw_simple_screen(
+    gfx_canvas_t *canvas,
+    const char *title
+)
+{
+    gfx_canvas_fill(canvas, 0x0000);
+
+
+    // Top border
+
+    gfx_canvas_draw_line(
+        canvas,
+        0,
+        18,
+        DISPLAY_WIDTH - 1,
+        18,
+        0xFFFF
+    );
+
+
+    // Title
+
+    gfx_canvas_draw_str(
+        canvas,
+        10,
+        40,
+        title,
+        UI_FONT,
+        0xFFFF
+    );
+
+
+    // Back
+
+    gfx_canvas_draw_str(
+        canvas,
+        10,
+        100,
+        "[< BACK]",
+        UI_FONT,
+        0x8410
+    );
+}
+
+
+// ============================================================================
 // Render
 // ============================================================================
 
@@ -363,6 +573,60 @@ static void ui_render(gfx_canvas_t *canvas)
         case UI_SCREEN_MAIN_MENU:
 
             draw_main_menu(canvas);
+
+            break;
+
+
+        case UI_SCREEN_IR_MENU:
+
+            draw_ir_menu(canvas);
+
+            break;
+
+
+        case UI_SCREEN_WIFI_MENU:
+
+            draw_wifi_menu(canvas);
+
+            break;
+
+
+        case UI_SCREEN_RF_MENU:
+
+            draw_simple_screen(
+                canvas,
+                "[RF (Sub-GHz)]"
+            );
+
+            break;
+
+
+        case UI_SCREEN_NRF_MENU:
+
+            draw_simple_screen(
+                canvas,
+                "[NRF24]"
+            );
+
+            break;
+
+
+        case UI_SCREEN_BT_MENU:
+
+            draw_simple_screen(
+                canvas,
+                "[Bluetooth]"
+            );
+
+            break;
+
+
+        case UI_SCREEN_SETTINGS_MENU:
+
+            draw_simple_screen(
+                canvas,
+                "[Settings]"
+            );
 
             break;
 
@@ -513,7 +777,7 @@ void ui_task(void *arg)
         }
 
 
-        // Пока обрабатываем события только в главном меню
+        // Пока обработка событий только главного меню
 
         if (current_screen != UI_SCREEN_MAIN_MENU) {
             continue;
@@ -586,6 +850,8 @@ void ui_task(void *arg)
                 if (main_menu[current_selected].callback) {
 
                     main_menu[current_selected].callback();
+
+                    ui_render(&canvas);
                 }
 
                 break;
@@ -604,8 +870,7 @@ void ui_task(void *arg)
     }
 
 
-    // Теоретически сюда код никогда не дойдёт,
-    // потому что while(1) бесконечный.
+    // Теоретически сюда код никогда не дойдёт.
 
     gfx_canvas_deinit(&canvas);
 
