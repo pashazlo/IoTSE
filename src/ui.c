@@ -3,10 +3,12 @@
 #include "display.h"
 #include "gfx_canvas.h"
 #include "assets/ibm_vga_font.h"
+#include <string.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#include <time.h>
 
 #include "esp_log.h"
 
@@ -102,7 +104,25 @@ static void action_settings(void)
     ESP_LOGI(TAG, "Opened Settings");
     current_screen = UI_SCREEN_SETTINGS_MENU;
 }
+// ============================================================================
+// System Time
+// ============================================================================
 
+static void get_time_string(char *buffer, size_t buffer_size)
+{
+    time_t now;
+    struct tm time_info;
+
+    time(&now);
+    localtime_r(&now, &time_info);
+
+    strftime(
+        buffer,
+        buffer_size,
+        "%H:%M",
+        &time_info
+    );
+}
 
 // ============================================================================
 // Menu Data
@@ -530,6 +550,8 @@ static void draw_main_menu(gfx_canvas_t *canvas)
 {
     gfx_canvas_fill(canvas, 0x0000);
 
+    draw_main_clock(canvas);
+
     gfx_canvas_draw_line(
         canvas,
         0,
@@ -564,7 +586,28 @@ static void draw_main_menu(gfx_canvas_t *canvas)
         0x0000
     );
 }
+// ============================================================================
+// Main Screen Clock
+// ============================================================================
 
+static void draw_main_clock(gfx_canvas_t *canvas)
+{
+    char time_buffer[16];
+
+    get_time_string(
+        time_buffer,
+        sizeof(time_buffer)
+    );
+
+    gfx_canvas_draw_str(
+        canvas,
+        140,
+        14,
+        time_buffer,
+        UI_FONT,
+        0xFFFF
+    );
+}
 
 // ============================================================================
 // IR Menu
