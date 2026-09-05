@@ -16,18 +16,13 @@ static void handle_main_menu_event(
     gfx_canvas_t *canvas
 )
 {
-    uint8_t *selected = ui_focus_main_selected();
 
     switch (evt) {
 
         case UI_EVT_UP:
         case UI_EVT_DOWN:
 
-            ui_focus_move(
-                selected,
-                main_menu_count,
-                evt
-            );
+           ui_focus_move(UI_FOCUS_MAIN, main_menu_count, evt);
 
             ui_render(canvas);
 
@@ -35,10 +30,11 @@ static void handle_main_menu_event(
 
         case UI_EVT_SELECT:
 
-            if (main_menu[*selected].callback) {
-                main_menu[*selected].callback();
-                ui_render(canvas);
-            }
+           uint8_t selected = ui_focus_get(UI_FOCUS_MAIN);
+            if (main_menu[selected].callback) {
+            main_menu[selected].callback();
+            ui_render(canvas);
+}
 
             break;
 
