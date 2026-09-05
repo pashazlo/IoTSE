@@ -1,7 +1,9 @@
+
 #pragma once
 
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
+#include "ui_event.h"
 
 #ifdef __cplusplus
 extern "C" {
