@@ -339,4 +339,3 @@ void ui_controller_handle_event(
             break;
     }
 }
-```
