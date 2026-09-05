@@ -1,4 +1,3 @@
-```c
 #pragma once
 
 #include <stdint.h>
@@ -76,4 +75,3 @@ void ui_focus_reset_all(void);
 #ifdef __cplusplus
 }
 #endif
-```
