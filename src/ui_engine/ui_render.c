@@ -3,6 +3,7 @@
 #include "ui_screen.h"
 #include "ui_menu.h"
 #include "ui_focus.h"
+#include "ui_cursor.h"
 #include "ui_clock.h"
 #include "ui_logo.h"
 
@@ -17,9 +18,78 @@
 
 
 // ============================================================================
+// Курсор-рамка (уголки-скобки)
+// ============================================================================
+
+// Курсор один на весь UI (а не по одному на каждое меню) — он просто
+// "переезжает" между объектами, где бы они ни находились.
+static ui_cursor_t s_cursor;
+
+// Отступ рамки-курсора от текста и приблизительные метрики шрифта
+// Px437_IBM_VGA_8x14 (высота глифа ~14px: ~11px над базовой линией,
+// ~3px под ней). Если поменяете шрифт — возможно, придётся подправить
+// эти числа на глаз, т.к. gfx_font_t не хранит общий ascent/descent шрифта.
+#define UI_CURSOR_PAD      2
+#define UI_TEXT_ASCENT     11
+#define UI_TEXT_DESCENT    3
+
+
+bool ui_render_cursor_is_animating(void)
+{
+    return s_cursor.animating;
+}
+
+
+// Ширина строки в пикселях = сумма xAdvance всех глифов.
+// Шрифт не строго моноширинный, поэтому "strlen * const" был бы неточным.
+static int16_t measure_text_width(const gfx_font_t *font, const char *str)
+{
+    int16_t w = 0;
+
+    while (*str) {
+        uint8_t ch = (uint8_t)*str;
+        if (ch >= font->first && ch <= font->last) {
+            w += font->glyphs[ch - font->first].xAdvance;
+        }
+        str++;
+    }
+
+    return w;
+}
+
+
+// Подвинуть курсор к рамке вокруг текста (text_x/text_y — те же
+// координаты, что были переданы в gfx_canvas_draw_str), сделать шаг
+// анимации и нарисовать курсор поверх уже отрисованного контента.
+// Вызывать РОВНО для того пункта меню, который сейчас выбран.
+static void place_cursor_on_text(
+    gfx_canvas_t *canvas,
+    int16_t text_x,
+    int16_t text_y,
+    const char *text
+)
+{
+    int16_t text_w = measure_text_width(UI_FONT, text);
+
+    int16_t x = text_x - UI_CURSOR_PAD;
+    int16_t y = text_y - UI_TEXT_ASCENT - UI_CURSOR_PAD;
+    int16_t w = text_w + UI_CURSOR_PAD * 2;
+    int16_t h = UI_TEXT_ASCENT + UI_TEXT_DESCENT + UI_CURSOR_PAD * 2;
+
+    ui_cursor_set_target(&s_cursor, x, y, w, h);
+    ui_cursor_step(&s_cursor);
+    ui_cursor_draw(canvas, &s_cursor, 0xFFFF);
+}
+
+
+// ============================================================================
 // Focus Drawing
 // ============================================================================
 
+// Раньше выделенный пункт оборачивался в текстовые "[скобки]".
+// Теперь выделение показывает курсор-рамка (place_cursor_on_text),
+// а здесь остаётся только разный цвет текста — для дополнительной
+// наглядности, курсору не мешает.
 static void draw_focus_text(
     gfx_canvas_t *canvas,
     int16_t x,
@@ -28,37 +98,14 @@ static void draw_focus_text(
     bool focused
 )
 {
-    if (focused) {
-
-        char buffer[64];
-
-        snprintf(
-            buffer,
-            sizeof(buffer),
-            "[%s]",
-            text
-        );
-
-        gfx_canvas_draw_str(
-            canvas,
-            x,
-            y,
-            buffer,
-            UI_FONT,
-            0xFFFF
-        );
-
-    } else {
-
-        gfx_canvas_draw_str(
-            canvas,
-            x,
-            y,
-            text,
-            UI_FONT,
-            0x8410
-        );
-    }
+    gfx_canvas_draw_str(
+        canvas,
+        x,
+        y,
+        text,
+        UI_FONT,
+        focused ? 0xFFFF : 0x8410
+    );
 }
 
 
@@ -142,13 +189,21 @@ static void draw_vertical_menu(
             y += 15;
         }
 
+        bool focused = (i == selected);
+
         draw_focus_text(
             canvas,
             10,
             y,
             items[i],
-            i == selected
+            focused
         );
+
+        if (focused) {
+            // Курсор ставим именно на выбранный пункт, после того
+            // как он уже нарисован — рамка ляжет поверх текста.
+            place_cursor_on_text(canvas, 10, y, items[i]);
+        }
     }
 }
 
@@ -181,13 +236,19 @@ static void draw_main_menu(gfx_canvas_t *canvas)
 
         int16_t y = start_y + (i * line_h);
 
+        bool focused = (i == selected);
+
         draw_focus_text(
             canvas,
             10,
             y,
             main_menu[i].title,
-            i == selected
+            focused
         );
+
+        if (focused) {
+            place_cursor_on_text(canvas, 10, y, main_menu[i].title);
+        }
     }
 
     ui_logo_draw(
@@ -301,7 +362,21 @@ static void draw_settings_menu(gfx_canvas_t *canvas)
 
 void ui_render(gfx_canvas_t *canvas)
 {
-    switch (ui_screen_get()) {
+    // При переходе на другой экран курсор не должен "лететь" через
+    // весь дисплей с прошлого места (например, из главного меню
+    // в подменю Wi-Fi) — он просто появляется заново на новом месте.
+    static ui_screen_t s_prev_screen;
+    static bool s_first_call = true;
+
+    ui_screen_t screen = ui_screen_get();
+
+    if (s_first_call || screen != s_prev_screen) {
+        ui_cursor_reset(&s_cursor);
+        s_prev_screen = screen;
+        s_first_call = false;
+    }
+
+    switch (screen) {
 
         case UI_SCREEN_SPLASH:
             draw_splash_screen(canvas);
