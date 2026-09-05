@@ -2,13 +2,10 @@
 
 #include "display.h"
 #include "gfx_canvas.h"
-#include "assets/ibm_vga_font.h"
-#include <string.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
-#include <time.h>
 
 #include "esp_log.h"
 
@@ -30,37 +27,11 @@ static const char *TAG = "UI";
 static QueueHandle_t ui_queue = NULL;
 
 
-// Все доступные экраны интерфейса.
-typedef enum {
-    UI_SCREEN_SPLASH,
-    UI_SCREEN_MAIN_MENU,
-    UI_SCREEN_IR_MENU,
-    UI_SCREEN_RF_MENU,
-    UI_SCREEN_NRF_MENU,
-    UI_SCREEN_WIFI_MENU,
-    UI_SCREEN_BT_MENU,
-    UI_SCREEN_SETTINGS_MENU,
-} ui_screen_t;
-
-
-// Текущий отображаемый экран.
-static ui_screen_t current_screen = UI_SCREEN_SPLASH;
 
 
 // ============================================================================
 // Menu Types
 // ============================================================================
-
-// Callback вызывается при выборе пункта главного меню.
-typedef void (*menu_cb_t)(void);
-
-
-// Описание одного пункта меню.
-typedef struct {
-    const char *title;
-    menu_cb_t callback;
-} menu_item_t;
-
 
 // ============================================================================
 // Screen Actions
@@ -69,128 +40,18 @@ typedef struct {
 // Пока callbacks нужны только главному меню.
 // Они переключают current_screen на соответствующий экран.
 
-static void action_ir(void)
-{
-    ESP_LOGI(TAG, "Opened IR Remote");
-    current_screen = UI_SCREEN_IR_MENU;
-}
 
-static void action_rf(void)
-{
-    ESP_LOGI(TAG, "Opened RF");
-    current_screen = UI_SCREEN_RF_MENU;
-}
-
-static void action_nrf(void)
-{
-    ESP_LOGI(TAG, "Opened NRF24");
-    current_screen = UI_SCREEN_NRF_MENU;
-}
-
-static void action_wifi(void)
-{
-    ESP_LOGI(TAG, "Opened Wi-Fi");
-    current_screen = UI_SCREEN_WIFI_MENU;
-}
-
-static void action_bt(void)
-{
-    ESP_LOGI(TAG, "Opened Bluetooth");
-    current_screen = UI_SCREEN_BT_MENU;
-}
-
-static void action_settings(void)
-{
-    ESP_LOGI(TAG, "Opened Settings");
-    current_screen = UI_SCREEN_SETTINGS_MENU;
-}
 // ============================================================================
 // System Time
 // ============================================================================
 
-static void get_time_string(char *buffer, size_t buffer_size)
-{
-    time_t now;
-    struct tm time_info;
-
-    time(&now);
-    localtime_r(&now, &time_info);
-
-    strftime(
-        buffer,
-        buffer_size,
-        "%H:%M",
-        &time_info
-    );
-}
 
 // ============================================================================
 // Menu Data
 // ============================================================================
 
 // Главное меню устройства.
-static const menu_item_t main_menu[] = {
-    {"IR Remote",    action_ir},
-    {"RF (Sub-GHz)", action_rf},
-    {"NRF24",        action_nrf},
-    {"Wi-Fi",        action_wifi},
-    {"Bluetooth",    action_bt},
-    {"Settings",     action_settings},
-};
 
-
-// Внутреннее меню IR.
-static const char *ir_menu[] = {
-    "TX / RX",
-    "Saved Signals",
-    "Protocols",
-    "< BACK",
-};
-
-
-// Внутреннее меню Wi-Fi.
-static const char *wifi_menu[] = {
-    "Scan",
-    "Networks",
-    "Settings",
-    "< BACK",
-};
-
-
-// Пока временное меню RF.
-static const char *rf_menu[] = {
-    "Receiver",
-    "Transmitter",
-    "Saved Signals",
-    "< BACK",
-};
-
-
-// Пока временное меню NRF24.
-static const char *nrf_menu[] = {
-    "Receiver",
-    "Transmitter",
-    "Settings",
-    "< BACK",
-};
-
-
-// Пока временное меню Bluetooth.
-static const char *bt_menu[] = {
-    "Scan",
-    "Devices",
-    "Settings",
-    "< BACK",
-};
-
-
-// Пока временное меню Settings.
-static const char *settings_menu[] = {
-    "Display",
-    "System",
-    "About",
-    "< BACK",
-};
 
 
 // ============================================================================
@@ -199,27 +60,6 @@ static const char *settings_menu[] = {
 
 // Автоматически считаем количество элементов массива.
 // Теперь не нужно вручную помнить, сколько пунктов в меню.
-
-#define MENU_COUNT \
-    (sizeof(main_menu) / sizeof(main_menu[0]))
-
-#define IR_MENU_COUNT \
-    (sizeof(ir_menu) / sizeof(ir_menu[0]))
-
-#define WIFI_MENU_COUNT \
-    (sizeof(wifi_menu) / sizeof(wifi_menu[0]))
-
-#define RF_MENU_COUNT \
-    (sizeof(rf_menu) / sizeof(rf_menu[0]))
-
-#define NRF_MENU_COUNT \
-    (sizeof(nrf_menu) / sizeof(nrf_menu[0]))
-
-#define BLUETOOTH_MENU_COUNT \
-    (sizeof(bt_menu) / sizeof(bt_menu[0]))
-
-#define SETTINGS_MENU_COUNT \
-    (sizeof(settings_menu) / sizeof(settings_menu[0]))
 
 
 // ============================================================================
@@ -232,118 +72,10 @@ static const char *settings_menu[] = {
 // если ты вышел из IR и потом вернулся,
 // IR помнит, где последний раз находился фокус.
 
-static uint8_t main_selected = 0;
-static uint8_t ir_selected = 0;
-static uint8_t wifi_selected = 0;
-static uint8_t rf_selected = 0;
-static uint8_t nrf_selected = 0;
-static uint8_t bt_selected = 0;
-static uint8_t settings_selected = 0;
-
 
 // ============================================================================
 // Red Team Logo
 // ============================================================================
-
-static void draw_redteam_logo(
-    gfx_canvas_t *canvas,
-    int16_t cx,
-    int16_t cy,
-    uint16_t bg_color
-)
-{
-    gfx_canvas_draw_circle(canvas, cx, cy, 42, 0xFFFF);
-    gfx_canvas_draw_circle(canvas, cx, cy, 41, 0xFFFF);
-
-    gfx_canvas_draw_circle(canvas, cx, cy, 26, 0xFFFF);
-
-    gfx_canvas_fill_circle(canvas, cx, cy, 11, 0xFFFF);
-
-    gfx_canvas_fill_circle(
-        canvas,
-        cx - 5,
-        cy - 5,
-        3,
-        bg_color
-    );
-
-    // Прицел.
-    const int16_t arm = 68;
-    const int16_t gap = 46;
-    const int16_t tick = 4;
-
-    gfx_canvas_draw_line(
-        canvas,
-        cx - arm,
-        cy,
-        cx - gap,
-        cy,
-        0xFFFF
-    );
-
-    gfx_canvas_draw_line(
-        canvas,
-        cx + gap,
-        cy,
-        cx + arm,
-        cy,
-        0xFFFF
-    );
-
-    gfx_canvas_draw_line(
-        canvas,
-        cx,
-        cy - arm,
-        cx,
-        cy - gap,
-        0xFFFF
-    );
-
-    gfx_canvas_draw_line(
-        canvas,
-        cx,
-        cy + gap,
-        cx,
-        cy + arm,
-        0xFFFF
-    );
-
-    gfx_canvas_draw_line(
-        canvas,
-        cx - arm,
-        cy - tick,
-        cx - arm,
-        cy + tick,
-        0xFFFF
-    );
-
-    gfx_canvas_draw_line(
-        canvas,
-        cx + arm,
-        cy - tick,
-        cx + arm,
-        cy + tick,
-        0xFFFF
-    );
-
-    gfx_canvas_draw_line(
-        canvas,
-        cx - tick,
-        cy - arm,
-        cx + tick,
-        cy - arm,
-        0xFFFF
-    );
-
-    gfx_canvas_draw_line(
-        canvas,
-        cx - tick,
-        cy + arm,
-        cx - tick,
-        cy + arm,
-        0xFFFF
-    );
-}
 
 
 // ============================================================================
@@ -361,47 +93,6 @@ static void draw_redteam_logo(
 // Позже именно эту функцию можно расширить:
 // добавить рамки, иконки, анимацию, курсор и другие типы объектов.
 
-static void draw_focus_text(
-    gfx_canvas_t *canvas,
-    int16_t x,
-    int16_t y,
-    const char *text,
-    bool focused
-)
-{
-    if (focused) {
-
-        char buffer[64];
-
-        snprintf(
-            buffer,
-            sizeof(buffer),
-            "[%s]",
-            text
-        );
-
-        gfx_canvas_draw_str(
-            canvas,
-            x,
-            y,
-            buffer,
-            UI_FONT,
-            0xFFFF
-        );
-
-    } else {
-
-        gfx_canvas_draw_str(
-            canvas,
-            x,
-            y,
-            text,
-            UI_FONT,
-            0x8410
-        );
-    }
-}
-
 
 // ============================================================================
 // Focus Movement
@@ -416,68 +107,9 @@ static void draw_focus_text(
 //
 // При выходе за границы меню происходит переход по кругу.
 
-static void move_focus(
-    uint8_t *selected,
-    uint8_t count,
-    ui_event_t evt
-)
-{
-    if (evt == UI_EVT_UP) {
-
-        if (*selected == 0) {
-            *selected = count - 1;
-        } else {
-            (*selected)--;
-        }
-    }
-
-    else if (evt == UI_EVT_DOWN) {
-
-        if (*selected >= count - 1) {
-            *selected = 0;
-        } else {
-            (*selected)++;
-        }
-    }
-}
-
-
 // ============================================================================
 // Splash Screen
 // ============================================================================
-
-static void draw_splash_screen(gfx_canvas_t *canvas)
-{
-    uint16_t background =
-        GFX_RGB565(0xF8, 0x00, 0x54);
-
-    gfx_canvas_fill(canvas, background);
-
-    gfx_canvas_draw_line(
-        canvas,
-        0,
-        12,
-        DISPLAY_WIDTH - 1,
-        12,
-        0xFFFF
-    );
-
-    gfx_canvas_draw_line(
-        canvas,
-        0,
-        DISPLAY_HEIGHT - 12,
-        DISPLAY_WIDTH - 1,
-        DISPLAY_HEIGHT - 12,
-        0xFFFF
-    );
-
-    draw_redteam_logo(
-        canvas,
-        230,
-        DISPLAY_HEIGHT / 2,
-        background
-    );
-}
 
 
 // ============================================================================
@@ -491,220 +123,49 @@ static void draw_splash_screen(gfx_canvas_t *canvas)
 // count      - количество пунктов
 // selected   - текущий элемент в фокусе
 
-static void draw_vertical_menu(
-    gfx_canvas_t *canvas,
-    const char *title,
-    const char *const *items,
-    int count,
-    int8_t selected
-)
-{
-    gfx_canvas_fill(canvas, 0x0000);
-
-    // Верхняя разделительная линия.
-    gfx_canvas_draw_line(
-        canvas,
-        0,
-        18,
-        DISPLAY_WIDTH - 1,
-        18,
-        0xFFFF
-    );
-
-    // Заголовок не является объектом фокуса.
-    gfx_canvas_draw_str(
-        canvas,
-        10,
-        9,
-        title,
-        UI_FONT,
-        0xFFFF
-    );
-
-    const int16_t start_y = 45;
-    const int16_t line_h = 20;
-
-    for (int i = 0; i < count; i++) {
-
-        int16_t y = start_y + (i * line_h);
-
-        // Последний BACK немного отделяем визуально.
-        if (i == count - 1) {
-            y += 15;
-        }
-
-        draw_focus_text(
-            canvas,
-            10,
-            y,
-            items[i],
-            i == selected
-        );
-    }
-}
 
 // ============================================================================
 // Main Screen Clock
 // ============================================================================
 
-static void draw_main_clock(gfx_canvas_t *canvas)
-{
-    char time_buffer[16];
 
-    get_time_string(
-        time_buffer,
-        sizeof(time_buffer)
-    );
-
-    gfx_canvas_draw_str(
-        canvas,
-        140,
-        14,
-        time_buffer,
-        UI_FONT,
-        0xFFFF
-    );
-}
 // ============================================================================
 // Main Menu
 // ============================================================================
 
-static void draw_main_menu(gfx_canvas_t *canvas)
-{
-    gfx_canvas_fill(canvas, 0x0000);
-
-    draw_main_clock(canvas);
-
-    gfx_canvas_draw_line(
-        canvas,
-        0,
-        18,
-        DISPLAY_WIDTH - 1,
-        18,
-        0xFFFF
-    );
-
-    const int16_t start_y = 40;
-    const int16_t line_h = 20;
-
-    for (int i = 0; i < MENU_COUNT; i++) {
-
-        int16_t y = start_y + (i * line_h);
-
-        // Старая механика if(active) удалена.
-        // Теперь весь фокус проходит через draw_focus_text().
-        draw_focus_text(
-            canvas,
-            10,
-            y,
-            main_menu[i].title,
-            i == main_selected
-        );
-    }
-
-    draw_redteam_logo(
-        canvas,
-        220,
-        90,
-        0x0000
-    );
-}
 
 
 // ============================================================================
 // IR Menu
 // ============================================================================
 
-static void draw_ir_menu(gfx_canvas_t *canvas)
-{
-    draw_vertical_menu(
-        canvas,
-        "IR Remote",
-        ir_menu,
-        IR_MENU_COUNT,
-        ir_selected
-    );
-}
 
 
 // ============================================================================
 // Wi-Fi Menu
 // ============================================================================
 
-static void draw_wifi_menu(gfx_canvas_t *canvas)
-{
-    draw_vertical_menu(
-        canvas,
-        "Wi-Fi",
-        wifi_menu,
-        WIFI_MENU_COUNT,
-        wifi_selected
-    );
-}
 
 
 // ============================================================================
 // RF Menu
 // ============================================================================
 
-static void draw_rf_menu(gfx_canvas_t *canvas)
-{
-    draw_vertical_menu(
-        canvas,
-        "RF (Sub-GHz)",
-        rf_menu,
-        RF_MENU_COUNT,
-        rf_selected
-    );
-}
-
 
 // ============================================================================
 // NRF24 Menu
 // ============================================================================
-
-static void draw_nrf_menu(gfx_canvas_t *canvas)
-{
-    draw_vertical_menu(
-        canvas,
-        "NRF24",
-        nrf_menu,
-        NRF_MENU_COUNT,
-        nrf_selected
-    );
-}
 
 
 // ============================================================================
 // Bluetooth Menu
 // ============================================================================
 
-static void draw_bt_menu(gfx_canvas_t *canvas)
-{
-    draw_vertical_menu(
-        canvas,
-        "Bluetooth",
-        bt_menu,
-        BLUETOOTH_MENU_COUNT,
-        bt_selected
-    );
-}
-
 
 // ============================================================================
 // Settings Menu
 // ============================================================================
 
-static void draw_settings_menu(gfx_canvas_t *canvas)
-{
-    draw_vertical_menu(
-        canvas,
-        "Settings",
-        settings_menu,
-        SETTINGS_MENU_COUNT,
-        settings_selected
-    );
-}
 
 
 // ============================================================================
@@ -717,48 +178,6 @@ static void draw_settings_menu(gfx_canvas_t *canvas)
 // затем вызывается функция отрисовки конкретного экрана,
 // после чего canvas отправляется на дисплей.
 
-static void ui_render(gfx_canvas_t *canvas)
-{
-    switch (current_screen) {
-
-        case UI_SCREEN_SPLASH:
-            draw_splash_screen(canvas);
-            break;
-
-        case UI_SCREEN_MAIN_MENU:
-            draw_main_menu(canvas);
-            break;
-
-        case UI_SCREEN_IR_MENU:
-            draw_ir_menu(canvas);
-            break;
-
-        case UI_SCREEN_RF_MENU:
-            draw_rf_menu(canvas);
-            break;
-
-        case UI_SCREEN_NRF_MENU:
-            draw_nrf_menu(canvas);
-            break;
-
-        case UI_SCREEN_WIFI_MENU:
-            draw_wifi_menu(canvas);
-            break;
-
-        case UI_SCREEN_BT_MENU:
-            draw_bt_menu(canvas);
-            break;
-
-        case UI_SCREEN_SETTINGS_MENU:
-            draw_settings_menu(canvas);
-            break;
-
-        default:
-            break;
-    }
-
-    gfx_canvas_flush(canvas);
-}
 
 
 // ============================================================================
