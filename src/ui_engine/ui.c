@@ -1,4 +1,3 @@
-
 #include "ui.h"
 
 #include "display.h"
@@ -154,12 +153,21 @@ void ui_task(void *arg)
 
     while (1) {
 
+        // Пока курсор-рамка ещё едет к выбранному пункту — тикаем
+        // часто (~30 раз в секунду), чтобы анимация была плавной.
+        // В состоянии покоя возвращаемся к редкому тику раз в секунду
+        // (нужен только для часов на главном экране) — так дисплей
+        // не перерисовывается зря и не тратится энергия батареи.
+        TickType_t wait_ticks = ui_render_cursor_is_animating()
+            ? pdMS_TO_TICKS(33)
+            : pdMS_TO_TICKS(1000);
+
         BaseType_t event_received;
 
         event_received = xQueueReceive(
             ui_queue,
             &evt,
-            pdMS_TO_TICKS(1000)
+            wait_ticks
         );
 
 
@@ -173,9 +181,12 @@ void ui_task(void *arg)
         }
 
 
-        // Главное меню обновляем раз в секунду.
-        // Это нужно для часов.
-        if (ui_screen_get() == UI_SCREEN_MAIN_MENU) {
+        // Перерисовываем в двух случаях:
+        // 1) главное меню — нужно для часов (раз в секунду);
+        // 2) курсор ещё анимируется — нужно дорисовать следующий
+        //    кадр его движения, даже если событие не приходило.
+        if (ui_screen_get() == UI_SCREEN_MAIN_MENU ||
+            ui_render_cursor_is_animating()) {
 
             ui_render(&canvas);
         }
@@ -188,4 +199,3 @@ void ui_task(void *arg)
 
     vTaskDelete(NULL);
 }
-
