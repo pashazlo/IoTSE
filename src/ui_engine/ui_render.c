@@ -1,7 +1,11 @@
+```c
 #include "ui_render.h"
 
 #include "ui_screen.h"
 #include "ui_menu.h"
+#include "ui_focus.h"
+#include "ui_clock.h"
+#include "ui_logo.h"
 
 #include "display.h"
 #include "assets/ibm_vga_font.h"
@@ -9,45 +13,9 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <stddef.h>
-#include <time.h>
 
 #define UI_FONT (&Px437_IBM_VGA_8x14_2x8pt7b7a)
 
-static void draw_redteam_logo(
-    gfx_canvas_t *canvas,
-    int16_t cx,
-    int16_t cy,
-    uint16_t bg_color
-)
-{
-    gfx_canvas_draw_circle(canvas, cx, cy, 42, 0xFFFF);
-    gfx_canvas_draw_circle(canvas, cx, cy, 41, 0xFFFF);
-    gfx_canvas_draw_circle(canvas, cx, cy, 26, 0xFFFF);
-    gfx_canvas_fill_circle(canvas, cx, cy, 11, 0xFFFF);
-
-    gfx_canvas_fill_circle(
-        canvas,
-        cx - 5,
-        cy - 5,
-        3,
-        bg_color
-    );
-
-    const int16_t arm = 68;
-    const int16_t gap = 46;
-    const int16_t tick = 4;
-
-    gfx_canvas_draw_line(canvas, cx - arm, cy, cx - gap, cy, 0xFFFF);
-    gfx_canvas_draw_line(canvas, cx + gap, cy, cx + arm, cy, 0xFFFF);
-    gfx_canvas_draw_line(canvas, cx, cy - arm, cx, cy - gap, 0xFFFF);
-    gfx_canvas_draw_line(canvas, cx, cy + gap, cx, cy + arm, 0xFFFF);
-
-    gfx_canvas_draw_line(canvas, cx - arm, cy - tick, cx - arm, cy + tick, 0xFFFF);
-    gfx_canvas_draw_line(canvas, cx + arm, cy - tick, cx + arm, cy + tick, 0xFFFF);
-    gfx_canvas_draw_line(canvas, cx - tick, cy - arm, cx + tick, cy - arm, 0xFFFF);
-    gfx_canvas_draw_line(canvas, cx - tick, cy + arm, cx + tick, cy + arm, 0xFFFF);
-}
 
 static void draw_focus_text(
     gfx_canvas_t *canvas,
@@ -60,7 +28,12 @@ static void draw_focus_text(
     if (focused) {
         char buffer[64];
 
-        snprintf(buffer, sizeof(buffer), "[%s]", text);
+        snprintf(
+            buffer,
+            sizeof(buffer),
+            "[%s]",
+            text
+        );
 
         gfx_canvas_draw_str(
             canvas,
@@ -81,6 +54,7 @@ static void draw_focus_text(
         );
     }
 }
+
 
 static void draw_splash_screen(gfx_canvas_t *canvas)
 {
@@ -106,7 +80,7 @@ static void draw_splash_screen(gfx_canvas_t *canvas)
         0xFFFF
     );
 
-    draw_redteam_logo(
+    ui_logo_draw(
         canvas,
         230,
         DISPLAY_HEIGHT / 2,
@@ -114,12 +88,13 @@ static void draw_splash_screen(gfx_canvas_t *canvas)
     );
 }
 
+
 static void draw_vertical_menu(
     gfx_canvas_t *canvas,
     const char *title,
     const char *const *items,
-    int count,
-    int8_t selected
+    uint8_t count,
+    uint8_t selected
 )
 {
     gfx_canvas_fill(canvas, 0x0000);
@@ -145,7 +120,8 @@ static void draw_vertical_menu(
     const int16_t start_y = 45;
     const int16_t line_h = 20;
 
-    for (int i = 0; i < count; i++) {
+    for (uint8_t i = 0; i < count; i++) {
+
         int16_t y = start_y + (i * line_h);
 
         if (i == count - 1) {
@@ -162,38 +138,14 @@ static void draw_vertical_menu(
     }
 }
 
-static void draw_main_clock(gfx_canvas_t *canvas)
-{
-    char time_buffer[16];
-
-    time_t now;
-    struct tm time_info;
-
-    time(&now);
-    localtime_r(&now, &time_info);
-
-    strftime(
-        time_buffer,
-        sizeof(time_buffer),
-        "%H:%M",
-        &time_info
-    );
-
-    gfx_canvas_draw_str(
-        canvas,
-        140,
-        14,
-        time_buffer,
-        UI_FONT,
-        0xFFFF
-    );
-}
 
 static void draw_main_menu(gfx_canvas_t *canvas)
 {
+    uint8_t *selected = ui_focus_main_selected();
+
     gfx_canvas_fill(canvas, 0x0000);
 
-    draw_main_clock(canvas);
+    ui_clock_draw(canvas);
 
     gfx_canvas_draw_line(
         canvas,
@@ -207,7 +159,8 @@ static void draw_main_menu(gfx_canvas_t *canvas)
     const int16_t start_y = 40;
     const int16_t line_h = 20;
 
-    for (int i = 0; i < MENU_COUNT; i++) {
+    for (uint8_t i = 0; i < main_menu_count; i++) {
+
         int16_t y = start_y + (i * line_h);
 
         draw_focus_text(
@@ -215,11 +168,11 @@ static void draw_main_menu(gfx_canvas_t *canvas)
             10,
             y,
             main_menu[i].title,
-            false
+            i == *selected
         );
     }
 
-    draw_redteam_logo(
+    ui_logo_draw(
         canvas,
         220,
         90,
@@ -227,75 +180,95 @@ static void draw_main_menu(gfx_canvas_t *canvas)
     );
 }
 
+
 static void draw_ir_menu(gfx_canvas_t *canvas)
 {
+    uint8_t *selected = ui_focus_ir_selected();
+
     draw_vertical_menu(
         canvas,
         "IR Remote",
         ir_menu,
-        IR_MENU_COUNT,
-        0
+        ir_menu_count,
+        *selected
     );
 }
 
+
 static void draw_wifi_menu(gfx_canvas_t *canvas)
 {
+    uint8_t *selected = ui_focus_wifi_selected();
+
     draw_vertical_menu(
         canvas,
         "Wi-Fi",
         wifi_menu,
-        WIFI_MENU_COUNT,
-        0
+        wifi_menu_count,
+        *selected
     );
 }
 
+
 static void draw_rf_menu(gfx_canvas_t *canvas)
 {
+    uint8_t *selected = ui_focus_rf_selected();
+
     draw_vertical_menu(
         canvas,
         "RF",
         rf_menu,
-        RF_MENU_COUNT,
-        0
+        rf_menu_count,
+        *selected
     );
 }
 
+
 static void draw_nrf_menu(gfx_canvas_t *canvas)
 {
+    uint8_t *selected = ui_focus_nrf_selected();
+
     draw_vertical_menu(
         canvas,
         "NRF24",
         nrf_menu,
-        NRF_MENU_COUNT,
-        0
+        nrf_menu_count,
+        *selected
     );
 }
 
+
 static void draw_bt_menu(gfx_canvas_t *canvas)
 {
+    uint8_t *selected = ui_focus_bt_selected();
+
     draw_vertical_menu(
         canvas,
         "Bluetooth",
         bt_menu,
-        BLUETOOTH_MENU_COUNT,
-        0
+        bt_menu_count,
+        *selected
     );
 }
 
+
 static void draw_settings_menu(gfx_canvas_t *canvas)
 {
+    uint8_t *selected = ui_focus_settings_selected();
+
     draw_vertical_menu(
         canvas,
         "Settings",
         settings_menu,
-        SETTINGS_MENU_COUNT,
-        0
+        settings_menu_count,
+        *selected
     );
 }
+
 
 void ui_render(gfx_canvas_t *canvas)
 {
     switch (ui_screen_get()) {
+
         case UI_SCREEN_SPLASH:
             draw_splash_screen(canvas);
             break;
@@ -334,3 +307,4 @@ void ui_render(gfx_canvas_t *canvas)
 
     gfx_canvas_flush(canvas);
 }
+
