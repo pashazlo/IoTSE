@@ -1,4 +1,3 @@
-
 #include "ui_render.h"
 
 #include "ui_screen.h"
@@ -17,6 +16,10 @@
 #define UI_FONT (&Px437_IBM_VGA_8x14_2x8pt7b)
 
 
+// ============================================================================
+// Focus Drawing
+// ============================================================================
+
 static void draw_focus_text(
     gfx_canvas_t *canvas,
     int16_t x,
@@ -26,6 +29,7 @@ static void draw_focus_text(
 )
 {
     if (focused) {
+
         char buffer[64];
 
         snprintf(
@@ -43,7 +47,9 @@ static void draw_focus_text(
             UI_FONT,
             0xFFFF
         );
+
     } else {
+
         gfx_canvas_draw_str(
             canvas,
             x,
@@ -55,6 +61,10 @@ static void draw_focus_text(
     }
 }
 
+
+// ============================================================================
+// Splash Screen
+// ============================================================================
 
 static void draw_splash_screen(gfx_canvas_t *canvas)
 {
@@ -88,6 +98,10 @@ static void draw_splash_screen(gfx_canvas_t *canvas)
     );
 }
 
+
+// ============================================================================
+// Generic Vertical Menu
+// ============================================================================
 
 static void draw_vertical_menu(
     gfx_canvas_t *canvas,
@@ -139,9 +153,13 @@ static void draw_vertical_menu(
 }
 
 
+// ============================================================================
+// Main Menu
+// ============================================================================
+
 static void draw_main_menu(gfx_canvas_t *canvas)
 {
-    uint8_t *selected = ui_focus_main_selected();
+    uint8_t selected = ui_focus_get(UI_FOCUS_MAIN);
 
     gfx_canvas_fill(canvas, 0x0000);
 
@@ -168,7 +186,7 @@ static void draw_main_menu(gfx_canvas_t *canvas)
             10,
             y,
             main_menu[i].title,
-            i == *selected
+            i == selected
         );
     }
 
@@ -181,89 +199,105 @@ static void draw_main_menu(gfx_canvas_t *canvas)
 }
 
 
+// ============================================================================
+// IR Menu
+// ============================================================================
+
 static void draw_ir_menu(gfx_canvas_t *canvas)
 {
-    uint8_t *selected = ui_focus_ir_selected();
-
     draw_vertical_menu(
         canvas,
         "IR Remote",
         ir_menu,
         ir_menu_count,
-        *selected
+        ui_focus_get(UI_FOCUS_IR)
     );
 }
 
 
+// ============================================================================
+// Wi-Fi Menu
+// ============================================================================
+
 static void draw_wifi_menu(gfx_canvas_t *canvas)
 {
-    uint8_t *selected = ui_focus_wifi_selected();
-
     draw_vertical_menu(
         canvas,
         "Wi-Fi",
         wifi_menu,
         wifi_menu_count,
-        *selected
+        ui_focus_get(UI_FOCUS_WIFI)
     );
 }
 
 
+// ============================================================================
+// RF Menu
+// ============================================================================
+
 static void draw_rf_menu(gfx_canvas_t *canvas)
 {
-    uint8_t *selected = ui_focus_rf_selected();
-
     draw_vertical_menu(
         canvas,
         "RF",
         rf_menu,
         rf_menu_count,
-        *selected
+        ui_focus_get(UI_FOCUS_RF)
     );
 }
 
 
+// ============================================================================
+// NRF24 Menu
+// ============================================================================
+
 static void draw_nrf_menu(gfx_canvas_t *canvas)
 {
-    uint8_t *selected = ui_focus_nrf_selected();
-
     draw_vertical_menu(
         canvas,
         "NRF24",
         nrf_menu,
         nrf_menu_count,
-        *selected
+        ui_focus_get(UI_FOCUS_NRF)
     );
 }
 
 
+// ============================================================================
+// Bluetooth Menu
+// ============================================================================
+
 static void draw_bt_menu(gfx_canvas_t *canvas)
 {
-    uint8_t *selected = ui_focus_bt_selected();
-
     draw_vertical_menu(
         canvas,
         "Bluetooth",
         bt_menu,
         bt_menu_count,
-        *selected
+        ui_focus_get(UI_FOCUS_BT)
     );
 }
 
 
+// ============================================================================
+// Settings Menu
+// ============================================================================
+
 static void draw_settings_menu(gfx_canvas_t *canvas)
 {
-    uint8_t *selected = ui_focus_settings_selected();
-
     draw_vertical_menu(
         canvas,
         "Settings",
         settings_menu,
         settings_menu_count,
-        *selected
+        ui_focus_get(UI_FOCUS_SETTINGS)
     );
 }
 
+
+// ============================================================================
+// Main Render
+// ============================================================================
 
 void ui_render(gfx_canvas_t *canvas)
 {
@@ -307,4 +341,3 @@ void ui_render(gfx_canvas_t *canvas)
 
     gfx_canvas_flush(canvas);
 }
-
