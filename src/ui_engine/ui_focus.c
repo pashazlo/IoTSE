@@ -36,3 +36,37 @@ void ui_focus_move(
         }
     }
 }
+uint8_t *ui_focus_main_selected(void)
+{
+    return &main_selected;
+}
+
+uint8_t *ui_focus_ir_selected(void)
+{
+    return &ir_selected;
+}
+
+uint8_t *ui_focus_wifi_selected(void)
+{
+    return &wifi_selected;
+}
+
+uint8_t *ui_focus_rf_selected(void)
+{
+    return &rf_selected;
+}
+
+uint8_t *ui_focus_nrf_selected(void)
+{
+    return &nrf_selected;
+}
+
+uint8_t *ui_focus_bt_selected(void)
+{
+    return &bt_selected;
+}
+
+uint8_t *ui_focus_settings_selected(void)
+{
+    return &settings_selected;
+}
