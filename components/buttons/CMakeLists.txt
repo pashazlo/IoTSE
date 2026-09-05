@@ -1,5 +1,7 @@
 idf_component_register(
     SRCS "buttons.c"
     INCLUDE_DIRS "include"
-    REQUIRES driver freertos
+    REQUIRES 
+        esp_driver_gpio    
+        freertos
 )
