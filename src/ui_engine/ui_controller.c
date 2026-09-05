@@ -1,4 +1,4 @@
-```c
+
 #include "ui_controller.h"
 
 #include "ui_screen.h"
