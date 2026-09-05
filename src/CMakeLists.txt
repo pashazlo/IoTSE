@@ -7,7 +7,8 @@ idf_component_register(
         "." 
         "assets" 
         "ui_engine"
-        "ui_engine/include"  
+        "ui_engine/include" 
+        "ui_engine/widgets"
         "ui_engine/widgets/include"
     REQUIRES 
         buttons 
