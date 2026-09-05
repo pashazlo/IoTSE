@@ -1,24 +1,79 @@
+```c
 #pragma once
 
-#include "ui.h"
+#include <stdint.h>
+
+#include "ui_event.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+// ============================================================================
+// Focus IDs
+// ============================================================================
+
+typedef enum {
+    UI_FOCUS_MAIN = 0,
+    UI_FOCUS_IR,
+    UI_FOCUS_WIFI,
+    UI_FOCUS_RF,
+    UI_FOCUS_NRF,
+    UI_FOCUS_BT,
+    UI_FOCUS_SETTINGS,
+} ui_focus_id_t;
+
+
+// ============================================================================
+// Focus API
+// ============================================================================
+
+/**
+ * @brief Move focus according to UI event.
+ *
+ * UI_EVT_UP   -> previous item
+ * UI_EVT_DOWN -> next item
+ *
+ * Focus wraps around at the beginning/end of the list.
+ */
 void ui_focus_move(
-    uint8_t *selected,
+    ui_focus_id_t focus,
     uint8_t count,
     ui_event_t event
 );
-uint8_t *ui_focus_main_selected(void);
-uint8_t *ui_focus_ir_selected(void);
-uint8_t *ui_focus_wifi_selected(void);
-uint8_t *ui_focus_rf_selected(void);
-uint8_t *ui_focus_nrf_selected(void);
-uint8_t *ui_focus_bt_selected(void);
-uint8_t *ui_focus_settings_selected(void);
+
+
+/**
+ * @brief Get current selected item.
+ */
+uint8_t ui_focus_get(
+    ui_focus_id_t focus
+);
+
+
+/**
+ * @brief Set current selected item.
+ */
+void ui_focus_set(
+    ui_focus_id_t focus,
+    uint8_t selected
+);
+
+
+/**
+ * @brief Reset one focus to the first item.
+ */
+void ui_focus_reset(
+    ui_focus_id_t focus
+);
+
+
+/**
+ * @brief Reset all focus positions.
+ */
+void ui_focus_reset_all(void);
 
 #ifdef __cplusplus
 }
 #endif
+```
