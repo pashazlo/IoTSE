@@ -1,4 +1,4 @@
-```c
+
 #include "ui_render.h"
 
 #include "ui_screen.h"
