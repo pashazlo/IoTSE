@@ -15,6 +15,12 @@ typedef enum {
     UI_SCREEN_SETTINGS_MENU,
 } ui_screen_t;
 
+void action_ir(void);
+void action_rf(void);
+void action_nrf(void);
+void action_wifi(void);
+void action_bt(void);
+void action_settings(void);
 void ui_screen_set(ui_screen_t screen);
 ui_screen_t ui_screen_get(void);
 
