@@ -6,7 +6,7 @@
 #include <stddef.h>
 #include <time.h>
 
-#define UI_FONT (&Px437_IBM_VGA_8x14_2x8pt7b7a)
+#define UI_FONT (&Px437_IBM_VGA_8x14_2x8pt7b)
 
 void ui_clock_draw(gfx_canvas_t *canvas)
 {
