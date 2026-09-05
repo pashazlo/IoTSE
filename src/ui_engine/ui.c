@@ -1,4 +1,4 @@
-```c
+
 #include "ui.h"
 
 #include "display.h"
