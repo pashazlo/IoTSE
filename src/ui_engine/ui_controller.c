@@ -1,3 +1,4 @@
+```c
 #include "ui_controller.h"
 
 #include "ui_screen.h"
@@ -35,9 +36,7 @@ static void handle_main_menu_event(
         case UI_EVT_SELECT:
 
             if (main_menu[*selected].callback) {
-
                 main_menu[*selected].callback();
-
                 ui_render(canvas);
             }
 
@@ -84,9 +83,7 @@ static void handle_ir_menu_event(
         case UI_EVT_SELECT:
 
             if (*selected == ir_menu_count - 1) {
-
                 ui_screen_set(UI_SCREEN_MAIN_MENU);
-
                 ui_render(canvas);
             }
 
@@ -122,7 +119,7 @@ static void handle_wifi_menu_event(
 
             ui_focus_move(
                 selected,
-                WIFI_MENU_COUNT,
+                wifi_menu_count,
                 evt
             );
 
@@ -132,10 +129,8 @@ static void handle_wifi_menu_event(
 
         case UI_EVT_SELECT:
 
-            if (*selected == WIFI_MENU_COUNT - 1) {
-
+            if (*selected == wifi_menu_count - 1) {
                 ui_screen_set(UI_SCREEN_MAIN_MENU);
-
                 ui_render(canvas);
             }
 
@@ -171,7 +166,7 @@ static void handle_rf_menu_event(
 
             ui_focus_move(
                 selected,
-                RF_MENU_COUNT,
+                rf_menu_count,
                 evt
             );
 
@@ -181,10 +176,8 @@ static void handle_rf_menu_event(
 
         case UI_EVT_SELECT:
 
-            if (*selected == RF_MENU_COUNT - 1) {
-
+            if (*selected == rf_menu_count - 1) {
                 ui_screen_set(UI_SCREEN_MAIN_MENU);
-
                 ui_render(canvas);
             }
 
@@ -210,7 +203,7 @@ static void handle_nrf_menu_event(
 
             ui_focus_move(
                 selected,
-                NRF_MENU_COUNT,
+                nrf_menu_count,
                 evt
             );
 
@@ -220,10 +213,8 @@ static void handle_nrf_menu_event(
 
         case UI_EVT_SELECT:
 
-            if (*selected == NRF_MENU_COUNT - 1) {
-
+            if (*selected == nrf_menu_count - 1) {
                 ui_screen_set(UI_SCREEN_MAIN_MENU);
-
                 ui_render(canvas);
             }
 
@@ -249,7 +240,7 @@ static void handle_bt_menu_event(
 
             ui_focus_move(
                 selected,
-                BLUETOOTH_MENU_COUNT,
+                bt_menu_count,
                 evt
             );
 
@@ -259,10 +250,8 @@ static void handle_bt_menu_event(
 
         case UI_EVT_SELECT:
 
-            if (*selected == BLUETOOTH_MENU_COUNT - 1) {
-
+            if (*selected == bt_menu_count - 1) {
                 ui_screen_set(UI_SCREEN_MAIN_MENU);
-
                 ui_render(canvas);
             }
 
@@ -288,7 +277,7 @@ static void handle_settings_menu_event(
 
             ui_focus_move(
                 selected,
-                SETTINGS_MENU_COUNT,
+                settings_menu_count,
                 evt
             );
 
@@ -298,10 +287,8 @@ static void handle_settings_menu_event(
 
         case UI_EVT_SELECT:
 
-            if (*selected == SETTINGS_MENU_COUNT - 1) {
-
+            if (*selected == settings_menu_count - 1) {
                 ui_screen_set(UI_SCREEN_MAIN_MENU);
-
                 ui_render(canvas);
             }
 
@@ -352,3 +339,4 @@ void ui_controller_handle_event(
             break;
     }
 }
+```
