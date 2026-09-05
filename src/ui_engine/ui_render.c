@@ -14,7 +14,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define UI_FONT (&Px437_IBM_VGA_8x14_2x8pt7b7a)
+#define UI_FONT (&Px437_IBM_VGA_8x14_2x8pt7b)
 
 
 static void draw_focus_text(
