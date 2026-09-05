@@ -541,7 +541,28 @@ static void draw_vertical_menu(
     }
 }
 
+// ============================================================================
+// Main Screen Clock
+// ============================================================================
 
+static void draw_main_clock(gfx_canvas_t *canvas)
+{
+    char time_buffer[16];
+
+    get_time_string(
+        time_buffer,
+        sizeof(time_buffer)
+    );
+
+    gfx_canvas_draw_str(
+        canvas,
+        140,
+        14,
+        time_buffer,
+        UI_FONT,
+        0xFFFF
+    );
+}
 // ============================================================================
 // Main Menu
 // ============================================================================
@@ -586,28 +607,7 @@ static void draw_main_menu(gfx_canvas_t *canvas)
         0x0000
     );
 }
-// ============================================================================
-// Main Screen Clock
-// ============================================================================
 
-static void draw_main_clock(gfx_canvas_t *canvas)
-{
-    char time_buffer[16];
-
-    get_time_string(
-        time_buffer,
-        sizeof(time_buffer)
-    );
-
-    gfx_canvas_draw_str(
-        canvas,
-        140,
-        14,
-        time_buffer,
-        UI_FONT,
-        0xFFFF
-    );
-}
 
 // ============================================================================
 // IR Menu
@@ -1258,28 +1258,32 @@ void ui_task(void *arg)
 
     while (1) {
 
-        // Ждём событие от input_bridge.
-        if (xQueueReceive(
-                ui_queue,
-                &evt,
-                portMAX_DELAY
-            ) != pdTRUE) {
+    BaseType_t event_received;
 
-            continue;
-        }
+    event_received = xQueueReceive(
+        ui_queue,
+        &evt,
+        pdMS_TO_TICKS(1000)
+    );
 
-        // Больше нет старого ограничения:
-        //
-        // if (current_screen != UI_SCREEN_MAIN_MENU)
-        //     continue;
-        //
-        // Теперь каждое событие передаётся активному экрану.
+
+    // Если пришло событие кнопки
+    if (event_received == pdTRUE) {
 
         ui_handle_event(
             evt,
             &canvas
         );
     }
+
+
+    // Главное меню обновляем раз в секунду.
+    // Это нужно для часов.
+    if (current_screen == UI_SCREEN_MAIN_MENU) {
+
+        ui_render(&canvas);
+    }
+}
 
 
     // Теоретически сюда выполнение никогда не дойдёт.
