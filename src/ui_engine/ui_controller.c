@@ -24,7 +24,7 @@ static void handle_main_menu_event(
 
             ui_focus_move(
                 selected,
-                MENU_COUNT,
+                main_menu_count,
                 evt
             );
 
@@ -73,7 +73,7 @@ static void handle_ir_menu_event(
 
             ui_focus_move(
                 selected,
-                IR_MENU_COUNT,
+                ir_menu_count,
                 evt
             );
 
@@ -83,7 +83,7 @@ static void handle_ir_menu_event(
 
         case UI_EVT_SELECT:
 
-            if (*selected == IR_MENU_COUNT - 1) {
+            if (*selected == ir_menu_count - 1) {
 
                 ui_screen_set(UI_SCREEN_MAIN_MENU);
 
