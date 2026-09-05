@@ -232,13 +232,13 @@ static const char *settings_menu[] = {
 // если ты вышел из IR и потом вернулся,
 // IR помнит, где последний раз находился фокус.
 
-static int8_t main_selected = 0;
-static int8_t ir_selected = 0;
-static int8_t wifi_selected = 0;
-static int8_t rf_selected = 0;
-static int8_t nrf_selected = 0;
-static int8_t bt_selected = 0;
-static int8_t settings_selected = 0;
+static uint8_t main_selected = 0;
+static uint8_t ir_selected = 0;
+static uint8_t wifi_selected = 0;
+static uint8_t rf_selected = 0;
+static uint8_t nrf_selected = 0;
+static uint8_t bt_selected = 0;
+static uint8_t settings_selected = 0;
 
 
 // ============================================================================
@@ -417,25 +417,27 @@ static void draw_focus_text(
 // При выходе за границы меню происходит переход по кругу.
 
 static void move_focus(
-    int8_t *selected,
-    int count,
+    uint8_t *selected,
+    uint8_t count,
     ui_event_t evt
 )
 {
     if (evt == UI_EVT_UP) {
 
-        *selected =
-            (*selected <= 0)
-            ? count - 1
-            : *selected - 1;
+        if (*selected == 0) {
+            *selected = count - 1;
+        } else {
+            (*selected)--;
+        }
     }
 
     else if (evt == UI_EVT_DOWN) {
 
-        *selected =
-            (*selected >= count - 1)
-            ? 0
-            : *selected + 1;
+        if (*selected >= count - 1) {
+            *selected = 0;
+        } else {
+            (*selected)++;
+        }
     }
 }
 
