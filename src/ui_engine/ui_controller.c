@@ -1,4 +1,3 @@
-
 #include "ui_controller.h"
 
 #include "ui_screen.h"
@@ -16,27 +15,32 @@ static void handle_main_menu_event(
     gfx_canvas_t *canvas
 )
 {
-
     switch (evt) {
 
         case UI_EVT_UP:
         case UI_EVT_DOWN:
 
-           ui_focus_move(UI_FOCUS_MAIN, main_menu_count, evt);
+            ui_focus_move(
+                UI_FOCUS_MAIN,
+                main_menu_count,
+                evt
+            );
 
             ui_render(canvas);
 
             break;
 
         case UI_EVT_SELECT:
+        {
+            uint8_t selected = ui_focus_get(UI_FOCUS_MAIN);
 
-           uint8_t selected = ui_focus_get(UI_FOCUS_MAIN);
             if (main_menu[selected].callback) {
-            main_menu[selected].callback();
-            ui_render(canvas);
-}
+                main_menu[selected].callback();
+                ui_render(canvas);
+            }
 
             break;
+        }
 
         case UI_EVT_LEFT:
         case UI_EVT_RIGHT:
@@ -59,15 +63,13 @@ static void handle_ir_menu_event(
     gfx_canvas_t *canvas
 )
 {
-    uint8_t *selected = ui_focus_ir_selected();
-
     switch (evt) {
 
         case UI_EVT_UP:
         case UI_EVT_DOWN:
 
             ui_focus_move(
-                selected,
+                UI_FOCUS_IR,
                 ir_menu_count,
                 evt
             );
@@ -78,7 +80,7 @@ static void handle_ir_menu_event(
 
         case UI_EVT_SELECT:
 
-            if (*selected == ir_menu_count - 1) {
+            if (ui_focus_get(UI_FOCUS_IR) == ir_menu_count - 1) {
                 ui_screen_set(UI_SCREEN_MAIN_MENU);
                 ui_render(canvas);
             }
@@ -106,15 +108,13 @@ static void handle_wifi_menu_event(
     gfx_canvas_t *canvas
 )
 {
-    uint8_t *selected = ui_focus_wifi_selected();
-
     switch (evt) {
 
         case UI_EVT_UP:
         case UI_EVT_DOWN:
 
             ui_focus_move(
-                selected,
+                UI_FOCUS_WIFI,
                 wifi_menu_count,
                 evt
             );
@@ -125,7 +125,7 @@ static void handle_wifi_menu_event(
 
         case UI_EVT_SELECT:
 
-            if (*selected == wifi_menu_count - 1) {
+            if (ui_focus_get(UI_FOCUS_WIFI) == wifi_menu_count - 1) {
                 ui_screen_set(UI_SCREEN_MAIN_MENU);
                 ui_render(canvas);
             }
@@ -153,15 +153,13 @@ static void handle_rf_menu_event(
     gfx_canvas_t *canvas
 )
 {
-    uint8_t *selected = ui_focus_rf_selected();
-
     switch (evt) {
 
         case UI_EVT_UP:
         case UI_EVT_DOWN:
 
             ui_focus_move(
-                selected,
+                UI_FOCUS_RF,
                 rf_menu_count,
                 evt
             );
@@ -172,7 +170,7 @@ static void handle_rf_menu_event(
 
         case UI_EVT_SELECT:
 
-            if (*selected == rf_menu_count - 1) {
+            if (ui_focus_get(UI_FOCUS_RF) == rf_menu_count - 1) {
                 ui_screen_set(UI_SCREEN_MAIN_MENU);
                 ui_render(canvas);
             }
@@ -190,15 +188,13 @@ static void handle_nrf_menu_event(
     gfx_canvas_t *canvas
 )
 {
-    uint8_t *selected = ui_focus_nrf_selected();
-
     switch (evt) {
 
         case UI_EVT_UP:
         case UI_EVT_DOWN:
 
             ui_focus_move(
-                selected,
+                UI_FOCUS_NRF,
                 nrf_menu_count,
                 evt
             );
@@ -209,7 +205,7 @@ static void handle_nrf_menu_event(
 
         case UI_EVT_SELECT:
 
-            if (*selected == nrf_menu_count - 1) {
+            if (ui_focus_get(UI_FOCUS_NRF) == nrf_menu_count - 1) {
                 ui_screen_set(UI_SCREEN_MAIN_MENU);
                 ui_render(canvas);
             }
@@ -227,15 +223,13 @@ static void handle_bt_menu_event(
     gfx_canvas_t *canvas
 )
 {
-    uint8_t *selected = ui_focus_bt_selected();
-
     switch (evt) {
 
         case UI_EVT_UP:
         case UI_EVT_DOWN:
 
             ui_focus_move(
-                selected,
+                UI_FOCUS_BT,
                 bt_menu_count,
                 evt
             );
@@ -246,7 +240,7 @@ static void handle_bt_menu_event(
 
         case UI_EVT_SELECT:
 
-            if (*selected == bt_menu_count - 1) {
+            if (ui_focus_get(UI_FOCUS_BT) == bt_menu_count - 1) {
                 ui_screen_set(UI_SCREEN_MAIN_MENU);
                 ui_render(canvas);
             }
@@ -264,15 +258,13 @@ static void handle_settings_menu_event(
     gfx_canvas_t *canvas
 )
 {
-    uint8_t *selected = ui_focus_settings_selected();
-
     switch (evt) {
 
         case UI_EVT_UP:
         case UI_EVT_DOWN:
 
             ui_focus_move(
-                selected,
+                UI_FOCUS_SETTINGS,
                 settings_menu_count,
                 evt
             );
@@ -283,7 +275,7 @@ static void handle_settings_menu_event(
 
         case UI_EVT_SELECT:
 
-            if (*selected == settings_menu_count - 1) {
+            if (ui_focus_get(UI_FOCUS_SETTINGS) == settings_menu_count - 1) {
                 ui_screen_set(UI_SCREEN_MAIN_MENU);
                 ui_render(canvas);
             }
