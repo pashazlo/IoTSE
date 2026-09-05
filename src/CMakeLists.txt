@@ -1,4 +1,4 @@
-# Автоматически находим main.c и ВСЕ .c файлы внутри папки ui_engine
+# Автоматически собирает main.c и все .c файлы движка
 file(GLOB_RECURSE SRCS "main.c" "ui_engine/*.c")
 
 idf_component_register(
@@ -7,6 +7,7 @@ idf_component_register(
         "." 
         "assets" 
         "ui_engine"
+        "ui_engine/include"  # <-- Добавили папку с заголовочниками движка
     REQUIRES 
         buttons 
         display 
