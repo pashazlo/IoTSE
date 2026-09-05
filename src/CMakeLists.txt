@@ -1,5 +1,16 @@
 idf_component_register(
-    SRCS "main.c"  
-    INCLUDE_DIRS "." "assets" "ui_engine"
-    REQUIRES display spi_bus gfx_canvas 
+    SRCS 
+        "main.c"
+        "ui_engine/ui.c"
+    INCLUDE_DIRS 
+        "." 
+        "assets" 
+        "ui_engine"
+    REQUIRES 
+        buttons 
+        display 
+        gfx_canvas 
+        spi_bus 
+        driver 
+        freertos
 )
