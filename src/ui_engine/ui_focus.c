@@ -1,5 +1,7 @@
 #include "ui_focus.h"
 
+#include <math.h>
+
 // ============================================================================
 // Focus State
 // ============================================================================
@@ -146,3 +148,91 @@ void ui_focus_reset_all(void)
     settings_selected = 0;
 }
 
+
+// ============================================================================
+// Spatial navigation (задел на будущее — см. комментарий в ui_focus.h)
+// ============================================================================
+
+int8_t ui_focus_find_nearest(
+    const ui_bbox_t *boxes,
+    uint8_t count,
+    uint8_t current,
+    ui_event_t direction
+)
+{
+    if (boxes == NULL || current >= count) {
+        return -1;
+    }
+
+    // Центр текущего выбранного объекта — точка отсчёта для поиска.
+    float cx = boxes[current].x + boxes[current].w / 2.0f;
+    float cy = boxes[current].y + boxes[current].h / 2.0f;
+
+    int8_t best = -1;
+    float best_score = 0.0f;
+
+    for (uint8_t i = 0; i < count; i++) {
+
+        if (i == current) {
+            continue;
+        }
+
+        float ix = boxes[i].x + boxes[i].w / 2.0f;
+        float iy = boxes[i].y + boxes[i].h / 2.0f;
+
+        float dx = ix - cx;
+        float dy = iy - cy;
+
+        // primary   — расстояние по оси движения (главный критерий)
+        // secondary — смещение по перпендикулярной оси (штраф за то,
+        //             что объект "не по пути" от текущего к цели)
+        bool in_direction = false;
+        float primary = 0.0f;
+        float secondary = 0.0f;
+
+        switch (direction) {
+
+            case UI_EVT_RIGHT:
+                in_direction = dx > 0.5f;
+                primary = dx;
+                secondary = dy;
+                break;
+
+            case UI_EVT_LEFT:
+                in_direction = dx < -0.5f;
+                primary = -dx;
+                secondary = dy;
+                break;
+
+            case UI_EVT_DOWN:
+                in_direction = dy > 0.5f;
+                primary = dy;
+                secondary = dx;
+                break;
+
+            case UI_EVT_UP:
+                in_direction = dy < -0.5f;
+                primary = -dy;
+                secondary = dx;
+                break;
+
+            default:
+                break;
+        }
+
+        if (!in_direction) {
+            // Объект не в ту сторону — не рассматриваем его вообще,
+            // даже если он ближайший по прямой линии.
+            continue;
+        }
+
+        float score = primary + fabsf(secondary) * 2.0f;
+
+        if (best == -1 || score < best_score) {
+            best = (int8_t)i;
+            best_score = score;
+        }
+    }
+
+    return best;
+}
