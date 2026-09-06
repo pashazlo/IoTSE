@@ -13,6 +13,7 @@ typedef enum {
     UI_SCREEN_WIFI_MENU,
     UI_SCREEN_BT_MENU,
     UI_SCREEN_SETTINGS_MENU,
+    UI_SCREEN_COUNT   // keep last — размер таблицы-регистра меню (ui_menu.c)
 } ui_screen_t;
 
 void action_ir(void);
@@ -21,6 +22,14 @@ void action_nrf(void);
 void action_wifi(void);
 void action_bt(void);
 void action_settings(void);
+
+/**
+ * @brief Колбэк пункта "< BACK" для ЛЮБОГО подменю — возвращает
+ *        на главный экран. Один общий колбэк вместо спецпроверки
+ *        "выбран последний пункт списка" в контроллере.
+ */
+void action_back_to_main(void);
+
 void ui_screen_set(ui_screen_t screen);
 ui_screen_t ui_screen_get(void);
 
