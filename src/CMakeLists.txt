@@ -1,4 +1,3 @@
-# Автоматически собирает main.c и все .c файлы движка
 file(GLOB_RECURSE SRCS "main.c" "ui_engine/*.c" "storage/*.c")
 
 idf_component_register(
@@ -19,5 +18,7 @@ idf_component_register(
         spi_bus 
         driver 
         freertos
-        
+        nvs_flash
+        fatfs
+        wear_levelling
 )
