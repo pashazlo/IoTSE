@@ -1,5 +1,5 @@
 # Автоматически собирает main.c и все .c файлы движка
-file(GLOB_RECURSE SRCS "main.c" "ui_engine/*.c""storage/*.c"")
+file(GLOB_RECURSE SRCS "main.c" "ui_engine/*.c" "storage/*.c")
 
 idf_component_register(
     SRCS ${SRCS}
