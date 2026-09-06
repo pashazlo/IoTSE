@@ -1,5 +1,6 @@
 #include "spi_bus.h"
 #include "display.h"
+#include "storage.h"
 #include "esp_log.h"
 
 #include "freertos/FreeRTOS.h"
@@ -83,12 +84,45 @@ void app_main(void)
 
 
     // ========================================================================
+    // 0. Storage (NVS + FAT) — ПЕРВЫМ ДЕЛОМ, до всего остального.
+    //    NVS в ESP-IDF по соглашению должен быть готов раньше любых
+    //    других компонентов (в первую очередь — будущего Wi-Fi-стека).
+    // ========================================================================
+
+    ESP_LOGI(TAG, "Инициализация NVS...");
+
+    esp_err_t err = storage_nvs_init();
+
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Ошибка инициализации NVS: %s", esp_err_to_name(err));
+        return;
+    }
+
+    ESP_LOGI(TAG, "✓ NVS инициализирован");
+
+    ESP_LOGI(TAG, "Монтирование FAT-раздела...");
+
+    err = storage_fat_init();
+
+    if (err != ESP_OK) {
+        // Не считаем это фатальным для остальной прошивки (дисплей
+        // и меню могут работать и без файловой системы) — просто
+        // предупреждаем и идём дальше. Если для вашей логики
+        // отсутствие storage критично — замените на return.
+        ESP_LOGW(TAG, "FAT-раздел не смонтирован: %s (продолжаем без него)",
+                 esp_err_to_name(err));
+    } else {
+        ESP_LOGI(TAG, "✓ FAT-раздел смонтирован на %s", STORAGE_FAT_MOUNT_POINT);
+    }
+
+
+    // ========================================================================
     // 1. SPI
     // ========================================================================
 
     ESP_LOGI(TAG, "Инициализация общей шины SPI...");
 
-    esp_err_t err = spi_bus_shared_init();
+    err = spi_bus_shared_init();
 
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Ошибка инициализации SPI: %s", esp_err_to_name(err));
