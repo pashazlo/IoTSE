@@ -1,53 +1,17 @@
 #include "ui_focus.h"
 
 #include <math.h>
+#include <string.h>
 
 // ============================================================================
 // Focus State
 // ============================================================================
 
-static uint8_t main_selected = 0;
-static uint8_t ir_selected = 0;
-static uint8_t wifi_selected = 0;
-static uint8_t rf_selected = 0;
-static uint8_t nrf_selected = 0;
-static uint8_t bt_selected = 0;
-static uint8_t settings_selected = 0;
-
-
-// ============================================================================
-// Internal State Access
-// ============================================================================
-
-static uint8_t *get_focus_state(ui_focus_id_t focus)
-{
-    switch (focus) {
-
-        case UI_FOCUS_MAIN:
-            return &main_selected;
-
-        case UI_FOCUS_IR:
-            return &ir_selected;
-
-        case UI_FOCUS_WIFI:
-            return &wifi_selected;
-
-        case UI_FOCUS_RF:
-            return &rf_selected;
-
-        case UI_FOCUS_NRF:
-            return &nrf_selected;
-
-        case UI_FOCUS_BT:
-            return &bt_selected;
-
-        case UI_FOCUS_SETTINGS:
-            return &settings_selected;
-
-        default:
-            return NULL;
-    }
-}
+// Один массив на все экраны, индексируется прямо значением enum
+// (UI_FOCUS_MAIN, UI_FOCUS_IR, ...). При добавлении нового
+// UI_FOCUS_XYZ в ui_focus.h массив автоматически станет на один
+// элемент больше — здесь ничего дописывать не нужно.
+static uint8_t s_selected[UI_FOCUS_COUNT];
 
 
 // ============================================================================
@@ -60,11 +24,11 @@ void ui_focus_move(
     ui_event_t event
 )
 {
-    uint8_t *selected = get_focus_state(focus);
-
-    if (selected == NULL || count == 0) {
+    if (focus >= UI_FOCUS_COUNT || count == 0) {
         return;
     }
+
+    uint8_t *selected = &s_selected[focus];
 
     if (*selected >= count) {
         *selected = 0;
@@ -96,13 +60,11 @@ void ui_focus_move(
 
 uint8_t ui_focus_get(ui_focus_id_t focus)
 {
-    uint8_t *selected = get_focus_state(focus);
-
-    if (selected == NULL) {
+    if (focus >= UI_FOCUS_COUNT) {
         return 0;
     }
 
-    return *selected;
+    return s_selected[focus];
 }
 
 
@@ -111,13 +73,11 @@ void ui_focus_set(
     uint8_t selected
 )
 {
-    uint8_t *current = get_focus_state(focus);
-
-    if (current == NULL) {
+    if (focus >= UI_FOCUS_COUNT) {
         return;
     }
 
-    *current = selected;
+    s_selected[focus] = selected;
 }
 
 
@@ -127,25 +87,17 @@ void ui_focus_set(
 
 void ui_focus_reset(ui_focus_id_t focus)
 {
-    uint8_t *selected = get_focus_state(focus);
-
-    if (selected == NULL) {
+    if (focus >= UI_FOCUS_COUNT) {
         return;
     }
 
-    *selected = 0;
+    s_selected[focus] = 0;
 }
 
 
 void ui_focus_reset_all(void)
 {
-    main_selected = 0;
-    ir_selected = 0;
-    wifi_selected = 0;
-    rf_selected = 0;
-    nrf_selected = 0;
-    bt_selected = 0;
-    settings_selected = 0;
+    memset(s_selected, 0, sizeof(s_selected));
 }
 
 
