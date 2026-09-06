@@ -51,3 +51,9 @@ void action_settings(void)
     ESP_LOGI(TAG, "Opened Settings");
     current_screen = UI_SCREEN_SETTINGS_MENU;
 }
+
+void action_back_to_main(void)
+{
+    ESP_LOGI(TAG, "Back to main menu");
+    current_screen = UI_SCREEN_MAIN_MENU;
+}
