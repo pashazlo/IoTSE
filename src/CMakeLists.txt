@@ -19,5 +19,5 @@ idf_component_register(
         spi_bus 
         driver 
         freertos
-        storage
+        
 )
