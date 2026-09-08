@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "esp_log.h"
 
