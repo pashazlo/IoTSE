@@ -1,4 +1,4 @@
-file(GLOB_RECURSE SRCS "main.c" "ui_engine/*.c" "storage/*.c")
+file(GLOB_RECURSE SRCS "main.c" "ui_engine/*.c" "storage/*.c" "fm/*.c")
 
 idf_component_register(
     SRCS ${SRCS}
@@ -7,6 +7,8 @@ idf_component_register(
         "assets" 
         "ui_engine"
         "storage"
+        "fm"
+        "fm/include"
         "storage/include"
         "ui_engine/include" 
         "ui_engine/widgets"
