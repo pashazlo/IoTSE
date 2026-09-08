@@ -7,14 +7,12 @@
 
 static const char *TAG = "storage";
 
-// Единый namespace для всех настроек — см. комментарий в storage.h
-#define NVS_NAMESPACE   "app_cfg"
+// Единый namespace для всех настроек
+#define NVS_NAMESPACE "app_cfg"
 
-// Состояние FAT-раздела — нужно, чтобы не смонтировать его дважды
-// и чтобы storage_fat_is_mounted() могла ответить без похода в VFS.
+// Состояние FAT-раздела
 static bool s_fat_mounted = false;
 static wl_handle_t s_wl_handle = WL_INVALID_HANDLE;
-
 
 // ============================================================================
 // NVS init
@@ -24,26 +22,24 @@ esp_err_t storage_nvs_init(void)
 {
     esp_err_t err = nvs_flash_init();
 
-    // Обе эти ошибки означают "раздел есть, но с ним что-то не так":
-    // либо физически повреждён (флеш кончает жизнь / был сбой питания
-    // во время записи), либо структура версий NVS несовместима
-    // (например, после смены версии ESP-IDF). В обоих случаях
-    // единственный разумный выход — стереть раздел и начать заново.
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_LOGW(TAG, "NVS раздел повреждён либо несовместим — стираем и переинициализируем");
-        ESP_ERROR_CHECK(nvs_flash_erase());
+        esp_err_t erase_err = nvs_flash_erase();
+        if (erase_err != ESP_OK) {
+            ESP_LOGE(TAG, "Ошибка стирания NVS: %s", esp_err_to_name(erase_err));
+            return erase_err;
+        }
         err = nvs_flash_init();
     }
 
     if (err == ESP_OK) {
-        ESP_LOGI(TAG, "NVS инициализирован");
+        ESP_LOGI(TAG, "NVS успешно инициализирован");
     } else {
         ESP_LOGE(TAG, "Ошибка инициализации NVS: %s", esp_err_to_name(err));
     }
 
     return err;
 }
-
 
 // ============================================================================
 // FAT init
@@ -52,23 +48,20 @@ esp_err_t storage_nvs_init(void)
 esp_err_t storage_fat_init(void)
 {
     if (s_fat_mounted) {
-        // Не считаем это ошибкой — просто "уже сделано", ESP_OK.
         ESP_LOGW(TAG, "FAT-раздел уже смонтирован, повторный вызов игнорируется");
         return ESP_OK;
     }
 
     esp_vfs_fat_mount_config_t mount_config = {
         .max_files = 4,
-        // true — только на случай самого первого запуска устройства,
-        // когда раздел ещё пустой/неотформатирован. На всех
-        // последующих запусках раздел уже валиден и не форматируется.
         .format_if_mount_failed = true,
-        .allocation_unit_size = CONFIG_WL_SECTOR_SIZE,
+        // 0 заставляет VFS автоматически выбрать безопасный размер кластера
+        .allocation_unit_size = 0,
     };
 
     esp_err_t err = esp_vfs_fat_spiflash_mount_rw_wl(
         STORAGE_FAT_MOUNT_POINT,
-        "storage",          // ИМЯ РАЗДЕЛА — должно совпадать со строкой в partitions.csv
+        "storage",          // Название раздела должно быть "storage" в partitions.csv
         &mount_config,
         &s_wl_handle
     );
@@ -83,12 +76,28 @@ esp_err_t storage_fat_init(void)
     return err;
 }
 
-
 bool storage_fat_is_mounted(void)
 {
     return s_fat_mounted;
 }
 
+esp_err_t storage_fat_deinit(void)
+{
+    if (!s_fat_mounted) {
+        return ESP_OK;
+    }
+
+    esp_err_t err = esp_vfs_fat_spiflash_unmount_rw_wl(STORAGE_FAT_MOUNT_POINT, s_wl_handle);
+    if (err == ESP_OK) {
+        s_fat_mounted = false;
+        s_wl_handle = WL_INVALID_HANDLE;
+        ESP_LOGI(TAG, "FAT-раздел успешно размонтирован");
+    } else {
+        ESP_LOGE(TAG, "Ошибка размонтирования FAT: %s", esp_err_to_name(err));
+    }
+
+    return err;
+}
 
 // ============================================================================
 // NVS: u8
@@ -96,22 +105,15 @@ bool storage_fat_is_mounted(void)
 
 esp_err_t storage_nvs_get_u8(const char *key, uint8_t *out_value, uint8_t default_value)
 {
-    if (out_value == NULL) {
+    if (out_value == NULL || key == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    // Заполняем значением по умолчанию СРАЗУ — если что-то ниже пойдёт
-    // не так (namespace ещё не создан, ключ не найден и т.п.),
-    // *out_value всё равно останется корректным и безопасным для
-    // использования, а не мусором со стека.
     *out_value = default_value;
 
     nvs_handle_t handle;
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
     if (err != ESP_OK) {
-        // Типичная причина на самом первом запуске: namespace ещё
-        // ни разу не создавался (создаётся только при первой ЗАПИСИ).
-        // Это не ошибка в прикладном смысле — просто "настроек ещё нет".
         return err;
     }
 
@@ -125,9 +127,12 @@ esp_err_t storage_nvs_get_u8(const char *key, uint8_t *out_value, uint8_t defaul
     return err;
 }
 
-
 esp_err_t storage_nvs_set_u8(const char *key, uint8_t value)
 {
+    if (key == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
     nvs_handle_t handle;
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
     if (err != ESP_OK) {
@@ -137,8 +142,6 @@ esp_err_t storage_nvs_set_u8(const char *key, uint8_t value)
 
     err = nvs_set_u8(handle, key, value);
     if (err == ESP_OK) {
-        // Без commit() запись остаётся только в RAM-кэше NVS и
-        // потеряется при следующей перезагрузке/сбое питания.
         err = nvs_commit(handle);
     }
 
@@ -151,19 +154,16 @@ esp_err_t storage_nvs_set_u8(const char *key, uint8_t value)
     return err;
 }
 
-
 // ============================================================================
 // NVS: строки
 // ============================================================================
 
 esp_err_t storage_nvs_get_str(const char *key, char *out_buf, size_t buf_size)
 {
-    if (out_buf == NULL || buf_size == 0) {
+    if (out_buf == NULL || buf_size == 0 || key == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    // Как и с u8 — гарантируем безопасное состояние буфера сразу,
-    // до любых попыток чтения из NVS.
     out_buf[0] = '\0';
 
     nvs_handle_t handle;
@@ -177,19 +177,15 @@ esp_err_t storage_nvs_get_str(const char *key, char *out_buf, size_t buf_size)
     nvs_close(handle);
 
     if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
-        // В т.ч. сюда попадёт ESP_ERR_NVS_INVALID_LENGTH, если
-        // buf_size меньше реально сохранённой строки — стоит смотреть
-        // в лог при отладке, если строки внезапно обрезаются.
         ESP_LOGW(TAG, "nvs_get_str('%s') ошибка: %s", key, esp_err_to_name(err));
     }
 
     return err;
 }
 
-
 esp_err_t storage_nvs_set_str(const char *key, const char *value)
 {
-    if (value == NULL) {
+    if (key == NULL || value == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
 
