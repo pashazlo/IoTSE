@@ -13,6 +13,9 @@ typedef enum {
     UI_SCREEN_WIFI_MENU,
     UI_SCREEN_BT_MENU,
     UI_SCREEN_SETTINGS_MENU,
+    UI_SCREEN_FILE_VOLUMES,   // выбор тома: Internal / SD Card
+    UI_SCREEN_FILE_BROWSER,   // список файлов/папок текущей директории
+    UI_SCREEN_FILE_EDITOR,    // построчный просмотр/редактирование файла
     UI_SCREEN_COUNT   // keep last — размер таблицы-регистра меню (ui_menu.c)
 } ui_screen_t;
 
@@ -22,6 +25,12 @@ void action_nrf(void);
 void action_wifi(void);
 void action_bt(void);
 void action_settings(void);
+
+/**
+ * @brief Открывает файловый менеджер — экран выбора тома.
+ *        Колбэк для пункта "File Manager" в settings_menu (ui_menu.c).
+ */
+void action_open_file_manager(void);
 
 /**
  * @brief Колбэк пункта "< BACK" для ЛЮБОГО подменю — возвращает
