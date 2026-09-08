@@ -55,10 +55,11 @@ static const menu_item_t bt_menu[] = {
 };
 
 static const menu_item_t settings_menu[] = {
-    {"Display", NULL},
-    {"System",  NULL},
-    {"About",   NULL},
-    {"< BACK",  action_back_to_main},
+    {"Display",       NULL},
+    {"System",        NULL},
+    {"File Manager",  action_open_file_manager},
+    {"About",         NULL},
+    {"< BACK",        action_back_to_main},
 };
 
 
