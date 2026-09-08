@@ -107,6 +107,15 @@ void gfx_canvas_print(gfx_canvas_t *c, const char *str);
 void gfx_canvas_printf(gfx_canvas_t *c, const char *fmt, ...);
 
 /**
+ * @brief Ширина строки в пикселях с данным шрифтом = сумма xAdvance
+ *        всех её глифов. Шрифт не строго моноширинный, поэтому
+ *        "strlen(str) * какая-то_константа" даёт неточный результат —
+ *        используйте эту функцию везде, где нужно реально измерить
+ *        текст (центрирование, перенос строк, разметка курсора).
+ */
+int16_t gfx_canvas_measure_text_width(const gfx_font_t *font, const char *str);
+
+/**
  * @brief Push exactly the dirty rectangle to the physical panel via
  *        display_draw_bitmap(), then clears the dirty rect. If nothing was
  *        drawn since the last flush, this is a no-op (no SPI traffic).
