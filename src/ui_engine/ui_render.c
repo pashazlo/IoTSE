@@ -7,6 +7,7 @@
 #include "ui_clock.h"
 #include "ui_logo.h"
 #include "ui_keyboard.h"
+#include <string.h>
 
 #include "fm.h"
 #include "fm_text_edit.h"
