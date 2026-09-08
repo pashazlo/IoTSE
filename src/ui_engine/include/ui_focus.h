@@ -20,6 +20,9 @@ typedef enum {
     UI_FOCUS_NRF,
     UI_FOCUS_BT,
     UI_FOCUS_SETTINGS,
+    UI_FOCUS_FILE_VOLUMES,
+    UI_FOCUS_FILE_BROWSER,
+    UI_FOCUS_FILE_EDITOR,
     UI_FOCUS_COUNT   // keep last
 } ui_focus_id_t;
 
