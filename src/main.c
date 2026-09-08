@@ -1,6 +1,7 @@
 #include "spi_bus.h"
 #include "display.h"
 #include "storage.h"
+#include "fm.h"
 #include "esp_log.h"
 
 #include "freertos/FreeRTOS.h"
@@ -114,6 +115,22 @@ void app_main(void)
     } else {
         ESP_LOGI(TAG, "✓ FAT-раздел смонтирован на %s", STORAGE_FAT_MOUNT_POINT);
     }
+
+    // Регистрируем внутренний раздел как том файлового менеджера.
+    // is_available = storage_fat_is_mounted — если по каким-то причинам
+    // монтирование выше не удалось, том корректно покажется недоступным
+    // в UI, а не приведёт к попытке открыть несуществующую директорию.
+    static const fm_volume_t internal_volume = {
+        .label = "Internal",
+        .mount_point = STORAGE_FAT_MOUNT_POINT,
+        .is_available = storage_fat_is_mounted,
+    };
+    fm_register_volume(&internal_volume);
+
+    // SD-карта пока физически не подключена — том для неё регистрируется
+    // здесь же, когда появится компонент sd_card (is_available будет
+    // указывать на sd_card_is_mounted). До тех пор в файловом менеджере
+    // будет виден только один том — Internal.
 
 
     // ========================================================================
