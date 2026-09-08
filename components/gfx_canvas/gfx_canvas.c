@@ -271,6 +271,21 @@ void gfx_canvas_printf(gfx_canvas_t *c, const char *fmt, ...)
     gfx_canvas_print(c, buf);
 }
 
+int16_t gfx_canvas_measure_text_width(const gfx_font_t *font, const char *str)
+{
+    int16_t w = 0;
+
+    while (*str) {
+        uint8_t ch = (uint8_t)*str;
+        if (ch >= font->first && ch <= font->last) {
+            w += font->glyphs[ch - font->first].xAdvance;
+        }
+        str++;
+    }
+
+    return w;
+}
+
 // ---- flush ----
 
 esp_err_t gfx_canvas_flush(gfx_canvas_t *c)
