@@ -1,61 +1,75 @@
 #include "fm_text_edit.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 
 
-// ============================================================================
-// Logging
-// ============================================================================
-
 static const char *TAG = "FM_TEXT_EDIT";
 
 
 // ============================================================================
-// Editor Storage
+// Editor state
 // ============================================================================
 
-// Двумерный массив:
+// Массив строк документа:
 //
-// line 0 -> [64 chars]
-// line 1 -> [64 chars]
-// line 2 -> [64 chars]
+// s_lines[0] -> первая строка
+// s_lines[1] -> вторая строка
+// ...
 //
-// Указатель имеет тип:
-// char (*)[FM_EDIT_MAX_LINE_LEN]
-//
-// Это позволяет обращаться:
-//
-// s_lines[line][column]
-//
+// Вся рабочая копия документа живёт в PSRAM.
+// Во flash файл записывается только при fm_text_edit_save().
+
 static char (*s_lines)[FM_EDIT_MAX_LINE_LEN] = NULL;
 
-
-// Текущее количество существующих строк.
 static uint16_t s_line_count = 0;
 
-
-// Путь к открытому файлу.
-static char s_filepath[FM_EDIT_MAX_PATH_LEN];
+static char s_filepath[FM_MAX_PATH_LEN];
 
 
 // ============================================================================
-// Internal Helpers
+// Internal helpers
 // ============================================================================
 
-static bool ensure_memory(void)
+static bool editor_is_ready(void)
+{
+    return s_lines != NULL;
+}
+
+
+static void copy_line(char *dst, const char *src)
+{
+    if (dst == NULL) {
+        return;
+    }
+
+    if (src == NULL) {
+        dst[0] = '\0';
+        return;
+    }
+
+    strncpy(dst, src, FM_EDIT_MAX_LINE_LEN - 1);
+
+    dst[FM_EDIT_MAX_LINE_LEN - 1] = '\0';
+}
+
+
+// ============================================================================
+// Init
+// ============================================================================
+
+void fm_text_edit_init(void)
 {
     if (s_lines != NULL) {
-        return true;
+        return;
     }
 
     size_t total_bytes =
         (size_t)FM_EDIT_MAX_LINES *
-        FM_EDIT_MAX_LINE_LEN;
+        (size_t)FM_EDIT_MAX_LINE_LEN;
 
     ESP_LOGI(
         TAG,
@@ -64,57 +78,54 @@ static bool ensure_memory(void)
     );
 
 
-    // Сначала пробуем PSRAM.
+    // Пробуем выделить рабочий буфер в PSRAM.
     s_lines = heap_caps_calloc(
         FM_EDIT_MAX_LINES,
         FM_EDIT_MAX_LINE_LEN,
-        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT
+        MALLOC_CAP_SPIRAM
     );
-
-
-    // Если PSRAM недоступна — fallback во внутреннюю RAM.
-    if (s_lines == NULL) {
-
-        ESP_LOGW(
-            TAG,
-            "PSRAM allocation failed, using internal RAM"
-        );
-
-        s_lines = calloc(
-            FM_EDIT_MAX_LINES,
-            FM_EDIT_MAX_LINE_LEN
-        );
-    }
 
 
     if (s_lines == NULL) {
 
         ESP_LOGE(
             TAG,
-            "Failed to allocate editor memory"
+            "Failed to allocate editor buffer in PSRAM"
         );
 
-        return false;
+        return;
     }
+
+
+    s_line_count = 1;
+
+    s_lines[0][0] = '\0';
+
+    s_filepath[0] = '\0';
 
 
     ESP_LOGI(
         TAG,
-        "Editor memory allocated: %p (%u bytes)",
-        s_lines,
-        (unsigned int)total_bytes
+        "Editor initialized successfully"
     );
-
-
-    return true;
 }
 
 
-static void clear_document(void)
+// ============================================================================
+// Clear
+// ============================================================================
+
+void fm_text_edit_clear(void)
 {
-    if (s_lines == NULL) {
-        return;
+    if (!editor_is_ready()) {
+
+        fm_text_edit_init();
+
+        if (!editor_is_ready()) {
+            return;
+        }
     }
+
 
     memset(
         s_lines,
@@ -123,129 +134,35 @@ static void clear_document(void)
         FM_EDIT_MAX_LINE_LEN
     );
 
+
     s_line_count = 1;
 
-    s_lines[0][0] = '\0';
-}
-
-
-// ============================================================================
-// Initialization
-// ============================================================================
-
-void fm_text_edit_init(void)
-{
-    if (!ensure_memory()) {
-        return;
-    }
-
-    if (s_line_count == 0) {
-        clear_document();
-    }
-
     s_filepath[0] = '\0';
 }
 
 
-void fm_text_edit_clear(void)
-{
-    if (!ensure_memory()) {
-        return;
-    }
-
-    clear_document();
-
-    s_filepath[0] = '\0';
-}
-
-
-void fm_text_edit_close(void)
-{
-    // Мы НЕ освобождаем PSRAM.
-    //
-    // Буфер редактора остаётся выделенным до перезагрузки.
-    // Это безопаснее и избавляет от фрагментации памяти.
-
-    if (s_lines == NULL) {
-        return;
-    }
-
-    clear_document();
-
-    s_filepath[0] = '\0';
-
-    ESP_LOGI(TAG, "Editor closed");
-}
-
-
 // ============================================================================
-// File Path
-// ============================================================================
-
-const char *fm_text_edit_get_filepath(void)
-{
-    return s_filepath;
-}
-
-
-// ============================================================================
-// Document State
-// ============================================================================
-
-uint16_t fm_text_edit_line_count(void)
-{
-    return s_line_count;
-}
-
-
-const char *fm_text_edit_get_line(uint16_t line_index)
-{
-    if (
-        s_lines == NULL ||
-        line_index >= s_line_count
-    ) {
-        return "";
-    }
-
-    return s_lines[line_index];
-}
-
-
-uint16_t fm_text_edit_line_length(uint16_t line_index)
-{
-    if (
-        s_lines == NULL ||
-        line_index >= s_line_count
-    ) {
-        return 0;
-    }
-
-    return (uint16_t)strnlen(
-        s_lines[line_index],
-        FM_EDIT_MAX_LINE_LEN
-    );
-}
-
-
-// ============================================================================
-// Line Management
+// Ensure line exists
 // ============================================================================
 
 bool fm_text_edit_ensure_line(uint16_t line_index)
 {
-    if (!ensure_memory()) {
-        return false;
+    if (!editor_is_ready()) {
+
+        fm_text_edit_init();
+
+        if (!editor_is_ready()) {
+            return false;
+        }
     }
+
 
     if (line_index >= FM_EDIT_MAX_LINES) {
         return false;
     }
 
 
-    while (
-        s_line_count <= line_index &&
-        s_line_count < FM_EDIT_MAX_LINES
-    ) {
+    while (s_line_count <= line_index) {
 
         s_lines[s_line_count][0] = '\0';
 
@@ -257,6 +174,65 @@ bool fm_text_edit_ensure_line(uint16_t line_index)
 }
 
 
+// ============================================================================
+// Getters
+// ============================================================================
+
+uint16_t fm_text_edit_line_count(void)
+{
+    if (!editor_is_ready()) {
+        return 0;
+    }
+
+    return s_line_count;
+}
+
+
+const char *fm_text_edit_get_line(uint16_t line_index)
+{
+    if (!editor_is_ready()) {
+        return "";
+    }
+
+
+    if (line_index >= s_line_count) {
+        return "";
+    }
+
+
+    return s_lines[line_index];
+}
+
+
+uint16_t fm_text_edit_line_length(uint16_t line_index)
+{
+    if (!editor_is_ready()) {
+        return 0;
+    }
+
+
+    if (line_index >= s_line_count) {
+        return 0;
+    }
+
+
+    return (uint16_t)strnlen(
+        s_lines[line_index],
+        FM_EDIT_MAX_LINE_LEN
+    );
+}
+
+
+const char *fm_text_edit_get_filepath(void)
+{
+    return s_filepath;
+}
+
+
+// ============================================================================
+// Set line
+// ============================================================================
+
 bool fm_text_edit_set_line(
     uint16_t line_index,
     const char *text
@@ -267,29 +243,29 @@ bool fm_text_edit_set_line(
     }
 
 
-    if (text == NULL) {
-
-        s_lines[line_index][0] = '\0';
-
-        return true;
-    }
-
-
-    strncpy(
+    copy_line(
         s_lines[line_index],
-        text,
-        FM_EDIT_MAX_LINE_LEN - 1
+        text
     );
 
-    s_lines[line_index][FM_EDIT_MAX_LINE_LEN - 1] = '\0';
 
     return true;
 }
 
 
+// ============================================================================
+// Insert line
+// ============================================================================
+
 bool fm_text_edit_insert_line_after(uint16_t line_index)
 {
-    if (!ensure_memory()) {
+    if (!editor_is_ready()) {
+        return false;
+    }
+
+
+    if (s_line_count >= FM_EDIT_MAX_LINES) {
+        ESP_LOGW(TAG, "Maximum line count reached");
         return false;
     }
 
@@ -299,17 +275,9 @@ bool fm_text_edit_insert_line_after(uint16_t line_index)
     }
 
 
-    if (s_line_count >= FM_EDIT_MAX_LINES) {
-
-        ESP_LOGW(TAG, "Maximum line count reached");
-
-        return false;
-    }
-
-
     // Сдвигаем строки вниз.
     //
-    // Было:
+    // Например:
     //
     // 0 AAA
     // 1 BBB
@@ -318,13 +286,13 @@ bool fm_text_edit_insert_line_after(uint16_t line_index)
     // insert after 0:
     //
     // 0 AAA
-    // 1 empty
+    // 1 ""
     // 2 BBB
     // 3 CCC
 
     for (
-        uint16_t i = s_line_count;
-        i > line_index + 1;
+        int32_t i = s_line_count;
+        i > (int32_t)line_index + 1;
         i--
     ) {
 
@@ -340,22 +308,28 @@ bool fm_text_edit_insert_line_after(uint16_t line_index)
 
     s_line_count++;
 
+
     return true;
 }
 
 
+// ============================================================================
+// Delete line
+// ============================================================================
+
 bool fm_text_edit_delete_line(uint16_t line_index)
 {
-    if (
-        s_lines == NULL ||
-        line_index >= s_line_count
-    ) {
+    if (!editor_is_ready()) {
         return false;
     }
 
 
-    // Последнюю строку физически не удаляем.
-    // Документ всегда содержит хотя бы одну строку.
+    if (line_index >= s_line_count) {
+        return false;
+    }
+
+
+    // Не даём документу стать документом из 0 строк.
     if (s_line_count == 1) {
 
         s_lines[0][0] = '\0';
@@ -382,12 +356,13 @@ bool fm_text_edit_delete_line(uint16_t line_index)
 
     s_lines[s_line_count][0] = '\0';
 
+
     return true;
 }
 
 
 // ============================================================================
-// Text Editing
+// Insert text into line
 // ============================================================================
 
 bool fm_text_edit_insert_text(
@@ -396,59 +371,64 @@ bool fm_text_edit_insert_text(
     const char *text
 )
 {
-    if (text == NULL) {
+    if (!editor_is_ready() || text == NULL) {
         return false;
     }
 
 
-    if (!fm_text_edit_ensure_line(line)) {
+    if (line >= s_line_count) {
         return false;
     }
 
 
     char *target = s_lines[line];
 
-
-    size_t line_len = strnlen(
+    size_t current_len = strnlen(
         target,
         FM_EDIT_MAX_LINE_LEN
     );
 
 
-    if (column > line_len) {
-        column = (uint16_t)line_len;
+    if (column > current_len) {
+        column = current_len;
     }
 
 
-    size_t text_len = strlen(text);
+    size_t insert_len = strlen(text);
 
 
-    size_t max_insert =
-        (FM_EDIT_MAX_LINE_LEN - 1) - line_len;
-
-
-    if (text_len > max_insert) {
-        text_len = max_insert;
-    }
-
-
-    if (text_len == 0) {
+    if (insert_len == 0) {
         return true;
     }
 
 
-    // Сдвигаем существующий текст вправо.
+    // Сколько реально можем вставить.
+    size_t available =
+        (FM_EDIT_MAX_LINE_LEN - 1) - current_len;
+
+
+    if (available == 0) {
+        return false;
+    }
+
+
+    if (insert_len > available) {
+        insert_len = available;
+    }
+
+
+    // Сдвигаем хвост строки вправо.
     memmove(
-        target + column + text_len,
+        target + column + insert_len,
         target + column,
-        line_len - column + 1
+        current_len - column + 1
     );
 
 
     memcpy(
         target + column,
         text,
-        text_len
+        insert_len
     );
 
 
@@ -456,29 +436,34 @@ bool fm_text_edit_insert_text(
 }
 
 
+// ============================================================================
+// Delete character
+// ============================================================================
+
 bool fm_text_edit_delete_char(
     uint16_t line,
     uint16_t column
 )
 {
-    if (
-        s_lines == NULL ||
-        line >= s_line_count
-    ) {
+    if (!editor_is_ready()) {
+        return false;
+    }
+
+
+    if (line >= s_line_count) {
         return false;
     }
 
 
     char *target = s_lines[line];
 
-
-    size_t line_len = strnlen(
+    size_t len = strnlen(
         target,
         FM_EDIT_MAX_LINE_LEN
     );
 
 
-    if (column >= line_len) {
+    if (column >= len) {
         return false;
     }
 
@@ -486,7 +471,7 @@ bool fm_text_edit_delete_char(
     memmove(
         target + column,
         target + column + 1,
-        line_len - column
+        len - column
     );
 
 
@@ -494,15 +479,21 @@ bool fm_text_edit_delete_char(
 }
 
 
+// ============================================================================
+// Backspace
+// ============================================================================
+
 bool fm_text_edit_backspace(
     uint16_t line,
     uint16_t column
 )
 {
-    if (
-        s_lines == NULL ||
-        line >= s_line_count
-    ) {
+    if (!editor_is_ready()) {
+        return false;
+    }
+
+
+    if (line >= s_line_count) {
         return false;
     }
 
@@ -520,62 +511,69 @@ bool fm_text_edit_backspace(
 
 
 // ============================================================================
-// File Loading
+// Open file
 // ============================================================================
 
 bool fm_text_edit_open(const char *filepath)
 {
-    if (
-        filepath == NULL ||
-        filepath[0] == '\0'
-    ) {
+    if (filepath == NULL) {
         return false;
     }
 
 
-    if (!ensure_memory()) {
-        return false;
+    if (!editor_is_ready()) {
+
+        fm_text_edit_init();
+
+        if (!editor_is_ready()) {
+            return false;
+        }
     }
 
 
-    ESP_LOGI(
-        TAG,
-        "Opening file: %s",
-        filepath
+    // Очищаем старый документ.
+    memset(
+        s_lines,
+        0,
+        (size_t)FM_EDIT_MAX_LINES *
+        FM_EDIT_MAX_LINE_LEN
     );
+
+
+    s_line_count = 1;
 
 
     FILE *file = fopen(filepath, "r");
 
-
     if (file == NULL) {
 
-        ESP_LOGE(
+        // Если файла нет — создаём пустой документ.
+        ESP_LOGW(
             TAG,
-            "Failed to open file: %s",
+            "File not found, opening empty document: %s",
             filepath
         );
 
-        return false;
+
+        copy_line(
+            s_filepath,
+            filepath
+        );
+
+
+        return true;
     }
-
-
-    clear_document();
-
-
-    uint16_t line_index = 0;
 
 
     char buffer[FM_EDIT_MAX_LINE_LEN];
 
 
+    uint16_t line = 0;
+
+
     while (
-        line_index < FM_EDIT_MAX_LINES &&
-        fgets(
-            buffer,
-            sizeof(buffer),
-            file
-        ) != NULL
+        fgets(buffer, sizeof(buffer), file) != NULL &&
+        line < FM_EDIT_MAX_LINES
     ) {
 
         // Убираем \n и \r.
@@ -587,45 +585,41 @@ bool fm_text_edit_open(const char *filepath)
         ] = '\0';
 
 
-        strncpy(
-            s_lines[line_index],
-            buffer,
-            FM_EDIT_MAX_LINE_LEN - 1
+        copy_line(
+            s_lines[line],
+            buffer
         );
 
-        s_lines[line_index]
-        [FM_EDIT_MAX_LINE_LEN - 1] = '\0';
 
-
-        line_index++;
+        line++;
     }
 
 
     fclose(file);
 
 
-    // Даже пустой файл должен иметь одну строку.
-    if (line_index == 0) {
+    if (line == 0) {
+
         s_line_count = 1;
+
+        s_lines[0][0] = '\0';
+
     } else {
-        s_line_count = line_index;
+
+        s_line_count = line;
     }
 
 
-    strncpy(
+    copy_line(
         s_filepath,
-        filepath,
-        sizeof(s_filepath) - 1
+        filepath
     );
-
-    s_filepath[
-        sizeof(s_filepath) - 1
-    ] = '\0';
 
 
     ESP_LOGI(
         TAG,
-        "Loaded %u lines",
+        "Opened file: %s (%u lines)",
+        filepath,
         (unsigned int)s_line_count
     );
 
@@ -635,18 +629,18 @@ bool fm_text_edit_open(const char *filepath)
 
 
 // ============================================================================
-// File Saving
+// Save file
 // ============================================================================
 
 bool fm_text_edit_save(void)
 {
+    if (!editor_is_ready()) {
+        return false;
+    }
+
+
     if (s_filepath[0] == '\0') {
-
-        ESP_LOGE(
-            TAG,
-            "No file opened"
-        );
-
+        ESP_LOGE(TAG, "No filepath set");
         return false;
     }
 
@@ -657,26 +651,15 @@ bool fm_text_edit_save(void)
 }
 
 
+// ============================================================================
+// Save as
+// ============================================================================
+
 bool fm_text_edit_save_as(const char *filepath)
 {
-    if (
-        filepath == NULL ||
-        filepath[0] == '\0'
-    ) {
+    if (!editor_is_ready() || filepath == NULL) {
         return false;
     }
-
-
-    if (s_lines == NULL) {
-        return false;
-    }
-
-
-    ESP_LOGI(
-        TAG,
-        "Saving file: %s",
-        filepath
-    );
 
 
     FILE *file = fopen(
@@ -689,7 +672,7 @@ bool fm_text_edit_save_as(const char *filepath)
 
         ESP_LOGE(
             TAG,
-            "Failed to create file: %s",
+            "Failed to open for writing: %s",
             filepath
         );
 
@@ -703,26 +686,14 @@ bool fm_text_edit_save_as(const char *filepath)
         i++
     ) {
 
-        if (
-            fputs(
-                s_lines[i],
-                file
-            ) == EOF
-        ) {
-
-            ESP_LOGE(
-                TAG,
-                "Write error on line %u",
-                (unsigned int)i
-            );
-
-            fclose(file);
-
-            return false;
-        }
+        fputs(
+            s_lines[i],
+            file
+        );
 
 
-        // После последней строки перевод не обязателен.
+        // Добавляем newline после каждой строки,
+        // кроме последней.
         if (i < s_line_count - 1) {
 
             fputc(
@@ -736,22 +707,47 @@ bool fm_text_edit_save_as(const char *filepath)
     fclose(file);
 
 
-    strncpy(
+    copy_line(
         s_filepath,
-        filepath,
-        sizeof(s_filepath) - 1
+        filepath
     );
-
-    s_filepath[
-        sizeof(s_filepath) - 1
-    ] = '\0';
 
 
     ESP_LOGI(
         TAG,
-        "File saved successfully"
+        "Saved file: %s",
+        filepath
     );
 
 
     return true;
+}
+
+
+// ============================================================================
+// Close
+// ============================================================================
+
+void fm_text_edit_close(void)
+{
+    // Пока не освобождаем PSRAM.
+    //
+    // Буфер остаётся выделенным на всё время работы устройства.
+    // Это нормально: всего 6.4 KB.
+    //
+    // Просто сбрасываем состояние документа.
+
+    if (!editor_is_ready()) {
+        return;
+    }
+
+
+    s_line_count = 1;
+
+    s_lines[0][0] = '\0';
+
+    s_filepath[0] = '\0';
+
+
+    ESP_LOGI(TAG, "Editor closed");
 }
