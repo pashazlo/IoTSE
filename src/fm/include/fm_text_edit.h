@@ -11,6 +11,7 @@
 // --- Инициализация и системные функции ---
 void fm_text_edit_init(void);
 void fm_text_edit_clear(void);
+void fm_text_edit_close(void);
 
 // --- Загрузка / Сохранение ---
 bool fm_text_edit_open(const char *filepath);
@@ -24,6 +25,7 @@ const char *fm_text_edit_get_line(uint16_t line_index);
 uint16_t fm_text_edit_line_length(uint16_t line_index);
 
 // --- Модификация документа ---
+bool fm_text_edit_set_line(uint16_t line_index, const char *text);
 bool fm_text_edit_ensure_line(uint16_t line_index);
 bool fm_text_edit_insert_line_after(uint16_t line_index);
 bool fm_text_edit_delete_line(uint16_t line_index);
