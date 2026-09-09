@@ -1,4 +1,5 @@
 #include "fm_text_edit.h"
+#include "fm.h"
 
 #include <stdio.h>
 #include <string.h>
