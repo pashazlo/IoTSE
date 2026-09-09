@@ -266,9 +266,7 @@ static void handle_file_editor_event(ui_event_t evt, gfx_canvas_t *canvas)
         }
 
         case UI_EVT_LEFT:
-            // Сохраняем и возвращаемся к списку файлов — автосохранения
-            // "на лету" нет специально (см. комментарий в fm_text_edit.h),
-            // сохранение происходит именно в момент выхода.
+            // Сохраняем и возвращаемся к списку файлов
             fm_text_edit_save(s_editor_path);
             fm_text_edit_close();
             ui_screen_set(UI_SCREEN_FILE_BROWSER);
@@ -282,8 +280,7 @@ static void handle_file_editor_event(ui_event_t evt, gfx_canvas_t *canvas)
 
 
 // ============================================================================
-// Обычные меню (главное меню и статические подменю) — без изменений
-// со времён прошлого рефакторинга.
+// Обычные меню (главное меню и статические подменю)
 // ============================================================================
 
 static void handle_menu_event(ui_event_t evt, gfx_canvas_t *canvas, const ui_menu_screen_t *menu)
