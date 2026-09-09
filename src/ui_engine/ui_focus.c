@@ -1,28 +1,19 @@
 #include "ui_focus.h"
-
-#include <math.h>
 #include <string.h>
+#include <stdlib.h>
 
 // ============================================================================
 // Focus State
 // ============================================================================
 
-// Один массив на все экраны, индексируется прямо значением enum
-// (UI_FOCUS_MAIN, UI_FOCUS_IR, ...). При добавлении нового
-// UI_FOCUS_XYZ в ui_focus.h массив автоматически станет на один
-// элемент больше — здесь ничего дописывать не нужно.
-static uint8_t s_selected[UI_FOCUS_COUNT];
-
+// Массив состояний фокуса для всех экранов
+static uint8_t s_selected[UI_FOCUS_COUNT] = {0};
 
 // ============================================================================
-// Focus Movement
+// Focus Movement (Линейный список: Вверх / Вниз)
 // ============================================================================
 
-void ui_focus_move(
-    ui_focus_id_t focus,
-    uint8_t count,
-    ui_event_t event
-)
+void ui_focus_move(ui_focus_id_t focus, uint8_t count, ui_event_t event)
 {
     if (focus >= UI_FOCUS_COUNT || count == 0) {
         return;
@@ -30,32 +21,28 @@ void ui_focus_move(
 
     uint8_t *selected = &s_selected[focus];
 
+    // Защита: если список уменьшился, сбрасываем фокус на последний элемент
     if (*selected >= count) {
-        *selected = 0;
+        *selected = count - 1;
     }
 
     if (event == UI_EVT_UP) {
-
         if (*selected == 0) {
-            *selected = count - 1;
+            *selected = count - 1; // Зацикливание вверх
         } else {
             (*selected)--;
         }
-    }
-
-    else if (event == UI_EVT_DOWN) {
-
+    } else if (event == UI_EVT_DOWN) {
         if (*selected >= count - 1) {
-            *selected = 0;
+            *selected = 0; // Зацикливание вниз
         } else {
             (*selected)++;
         }
     }
 }
 
-
 // ============================================================================
-// Get / Set
+// Get / Set / Reset
 // ============================================================================
 
 uint8_t ui_focus_get(ui_focus_id_t focus)
@@ -67,11 +54,7 @@ uint8_t ui_focus_get(ui_focus_id_t focus)
     return s_selected[focus];
 }
 
-
-void ui_focus_set(
-    ui_focus_id_t focus,
-    uint8_t selected
-)
+void ui_focus_set(ui_focus_id_t focus, uint8_t selected)
 {
     if (focus >= UI_FOCUS_COUNT) {
         return;
@@ -79,11 +62,6 @@ void ui_focus_set(
 
     s_selected[focus] = selected;
 }
-
-
-// ============================================================================
-// Reset
-// ============================================================================
 
 void ui_focus_reset(ui_focus_id_t focus)
 {
@@ -94,15 +72,13 @@ void ui_focus_reset(ui_focus_id_t focus)
     s_selected[focus] = 0;
 }
 
-
 void ui_focus_reset_all(void)
 {
     memset(s_selected, 0, sizeof(s_selected));
 }
 
-
 // ============================================================================
-// Spatial navigation (задел на будущее — см. комментарий в ui_focus.h)
+// Spatial Navigation (2D-сетки, иконки, произвольное меню)
 // ============================================================================
 
 int8_t ui_focus_find_nearest(
@@ -112,58 +88,53 @@ int8_t ui_focus_find_nearest(
     ui_event_t direction
 )
 {
-    if (boxes == NULL || current >= count) {
+    if (boxes == NULL || current >= count || count == 0) {
         return -1;
     }
 
-    // Центр текущего выбранного объекта — точка отсчёта для поиска.
-    float cx = boxes[current].x + boxes[current].w / 2.0f;
-    float cy = boxes[current].y + boxes[current].h / 2.0f;
+    // Вычисляем центр текущего элемента (целочисленная математика для скорости)
+    int32_t cx = boxes[current].x + (boxes[current].w / 2);
+    int32_t cy = boxes[current].y + (boxes[current].h / 2);
 
-    int8_t best = -1;
-    float best_score = 0.0f;
+    int8_t best_index = -1;
+    int32_t best_score = INT32_MAX;
 
     for (uint8_t i = 0; i < count; i++) {
-
         if (i == current) {
             continue;
         }
 
-        float ix = boxes[i].x + boxes[i].w / 2.0f;
-        float iy = boxes[i].y + boxes[i].h / 2.0f;
+        int32_t ix = boxes[i].x + (boxes[i].w / 2);
+        int32_t iy = boxes[i].y + (boxes[i].h / 2);
 
-        float dx = ix - cx;
-        float dy = iy - cy;
+        int32_t dx = ix - cx;
+        int32_t dy = iy - cy;
 
-        // primary   — расстояние по оси движения (главный критерий)
-        // secondary — смещение по перпендикулярной оси (штраф за то,
-        //             что объект "не по пути" от текущего к цели)
         bool in_direction = false;
-        float primary = 0.0f;
-        float secondary = 0.0f;
+        int32_t primary = 0;
+        int32_t secondary = 0;
 
         switch (direction) {
-
             case UI_EVT_RIGHT:
-                in_direction = dx > 0.5f;
+                in_direction = (dx > 0);
                 primary = dx;
                 secondary = dy;
                 break;
 
             case UI_EVT_LEFT:
-                in_direction = dx < -0.5f;
+                in_direction = (dx < 0);
                 primary = -dx;
                 secondary = dy;
                 break;
 
             case UI_EVT_DOWN:
-                in_direction = dy > 0.5f;
+                in_direction = (dy > 0);
                 primary = dy;
                 secondary = dx;
                 break;
 
             case UI_EVT_UP:
-                in_direction = dy < -0.5f;
+                in_direction = (dy < 0);
                 primary = -dy;
                 secondary = dx;
                 break;
@@ -173,18 +144,43 @@ int8_t ui_focus_find_nearest(
         }
 
         if (!in_direction) {
-            // Объект не в ту сторону — не рассматриваем его вообще,
-            // даже если он ближайший по прямой линии.
             continue;
         }
 
-        float score = primary + fabsf(secondary) * 2.0f;
+        // Метрика штрафа: расстояние по оси + двойной штраф за отклонение от оси
+        int32_t score = primary + (abs(secondary) * 2);
 
-        if (best == -1 || score < best_score) {
-            best = (int8_t)i;
+        if (score < best_score) {
             best_score = score;
+            best_index = (int8_t)i;
         }
     }
 
-    return best;
+    return best_index;
+}
+
+// Удобная обертка для 2D-перемещения по Bounding Box
+void ui_focus_move_spatial(
+    ui_focus_id_t focus,
+    const ui_bbox_t *boxes,
+    uint8_t count,
+    ui_event_t event
+)
+{
+    if (focus >= UI_FOCUS_COUNT || boxes == NULL || count == 0) {
+        return;
+    }
+
+    uint8_t current = ui_focus_get(focus);
+    
+    // Авто-коррекция, если фокус за границами
+    if (current >= count) {
+        current = 0;
+        ui_focus_set(focus, current);
+    }
+
+    int8_t next = ui_focus_find_nearest(boxes, count, current, event);
+    if (next >= 0) {
+        ui_focus_set(focus, (uint8_t)next);
+    }
 }
