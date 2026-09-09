@@ -50,12 +50,20 @@ void ui_file_editor_init(void) {
     fm_text_edit_init();
 }
 
-void ui_file_editor_open_file(const char *filepath) {
-    if (!filepath) return;
-    memset(&s_editor, 0, sizeof(s_editor));
-    fm_text_edit_open(filepath);
-}
+bool ui_file_editor_open_file(const char *filepath)
+{
+    if (filepath == NULL) {
+        return false;
+    }
 
+    memset(
+        &s_editor,
+        0,
+        sizeof(s_editor)
+    );
+
+    return fm_text_edit_open(filepath);
+}
 void ui_file_editor_handle_event(ui_event_t evt) {
 
     // 1. Модальная клавиатура (перехватывает управление)
