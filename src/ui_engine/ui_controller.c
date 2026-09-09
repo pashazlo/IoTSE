@@ -267,7 +267,7 @@ static void handle_file_editor_event(ui_event_t evt, gfx_canvas_t *canvas)
 
         case UI_EVT_LEFT:
             // Сохраняем и возвращаемся к списку файлов
-            fm_text_edit_save(s_editor_path);
+            fm_text_edit_save();
             fm_text_edit_close();
             ui_screen_set(UI_SCREEN_FILE_BROWSER);
             ui_render(canvas);
