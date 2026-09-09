@@ -12,6 +12,9 @@ static uint16_t s_line_count = 0;
 static char s_filepath[256] = {0};
 
 void fm_text_edit_init(void) {
+    if (s_lines == NULL) {
+        s_lines = heap_caps_malloc(FM_EDIT_MAX_LINES * FM_EDIT_MAX_LINE_LEN, MALLOC_CAP_SPIRAM);
+    }
     fm_text_edit_clear();
 }
 
