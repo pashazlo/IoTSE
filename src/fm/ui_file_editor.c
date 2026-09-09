@@ -98,7 +98,7 @@ void ui_file_editor_handle_event(ui_event_t evt) {
 
             case UI_EVT_DOWN:
 
-                if (s_editor.cursor_line + 1 <fm_text_edit_line_count()) {
+                if (s_editor.cursor_line + 1 < fm_text_edit_line_count()) {
 
                     s_editor.cursor_line++;
                     }
@@ -115,11 +115,19 @@ void ui_file_editor_handle_event(ui_event_t evt) {
             }
             break;
 
-        case UI_EVT_RIGHT:
-            if (s_editor.cursor_column < FM_EDIT_MAX_LINE_LEN - 1) {
-                s_editor.cursor_column++;
-            }
-            break;
+        case UI_EVT_RIGHT: {
+
+    uint16_t line_len =
+        fm_text_edit_line_length(
+            s_editor.cursor_line
+        );
+
+            if (s_editor.cursor_column < line_len) {
+        s_editor.cursor_column++;
+    }
+
+    break;
+}
 
         case UI_EVT_SELECT:
             // Открываем клавиатуру
