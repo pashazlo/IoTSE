@@ -1,358 +1,187 @@
 #include "fm_text_edit.h"
-
 #include <stdio.h>
 #include <string.h>
-
+#include <stdlib.h>
 #include "esp_log.h"
 
-static const char *TAG = "fm_text_edit";
-
-// ============================================================================
-// Состояние редактора
-// ============================================================================
-//
-// Буфер статический.
-//
-// При:
-//
-// 200 строк * 96 байт
-//
-// модуль занимает:
-//
-// 19200 байт
-//
-// Это специально сделано так, чтобы редактор маленьких текстовых файлов
-// не занимался динамическим malloc/free и имел предсказуемое потребление RAM.
-// ============================================================================
+static const char *TAG = "FM_TEXT_EDIT";
 
 static char s_lines[FM_EDIT_MAX_LINES][FM_EDIT_MAX_LINE_LEN];
 static uint16_t s_line_count = 0;
+static char s_filepath[256] = {0};
 
-// ============================================================================
-// Внутренние функции
-// ============================================================================
-
-// Скопировать текст в строку редактора безопасно.
-//
-// Всегда гарантируется '\0' в конце.
-// Если text == NULL — записывается пустая строка.
-static void copy_line(char *dst, const char *text)
-{
-if (text == NULL) {
-dst[0] = '\0';
-return;
+void fm_text_edit_init(void) {
+    fm_text_edit_clear();
 }
 
-strncpy(dst, text, FM_EDIT_MAX_LINE_LEN - 1);
-dst[FM_EDIT_MAX_LINE_LEN - 1] = '\0';
-
+void fm_text_edit_clear(void) {
+    memset(s_lines, 0, sizeof(s_lines));
+    s_line_count = 1; // Всегда есть хотя бы одна пустая строка
+    s_filepath[0] = '\0';
 }
 
-// ============================================================================
-// Открытие файла
-// ============================================================================
-
-esp_err_t fm_text_edit_open(const char *full_path)
-{
-if (full_path == NULL) {
-return ESP_ERR_INVALID_ARG;
+uint16_t fm_text_edit_line_count(void) {
+    return s_line_count;
 }
 
-// Перед открытием нового файла полностью сбрасываем предыдущий
-// документ.
-fm_text_edit_close();
-
-FILE *f = fopen(full_path, "r");
-
-if (f == NULL) {
-    // Отсутствующий файл считаем новым документом.
-    //
-    // Это удобно для сценария:
-    //
-    //     fm_create_file()
-    //         ->
-    //     fm_text_edit_open()
-    //         ->
-    //     пользователь начинает писать
-    //
-    ESP_LOGW(TAG,
-             "Файл '%s' не найден, открываем как пустой",
-             full_path);
-
-    s_line_count = 1;
-    s_lines[0][0] = '\0';
-
-    return ESP_OK;
+const char *fm_text_edit_get_line(uint16_t line_index) {
+    if (line_index >= s_line_count) {
+        return "";
+    }
+    return s_lines[line_index];
 }
 
+uint16_t fm_text_edit_line_length(uint16_t line_index) {
+    if (line_index >= s_line_count) {
+        return 0;
+    }
+    return (uint16_t)strlen(s_lines[line_index]);
+}
 
-char raw_line[FM_EDIT_MAX_LINE_LEN];
+const char *fm_text_edit_get_filepath(void) {
+    return s_filepath;
+}
 
-while (s_line_count < FM_EDIT_MAX_LINES) {
+bool fm_text_edit_open(const char *filepath) {
+    if (!filepath) return false;
 
-    if (fgets(raw_line, sizeof(raw_line), f) == NULL) {
-        break;
+    FILE *f = fopen(filepath, "r");
+    if (!f) {
+        ESP_LOGE(TAG, "Failed to open file: %s", filepath);
+        return false;
     }
 
-    size_t len = strlen(raw_line);
+    fm_text_edit_clear();
+    strncpy(s_filepath, filepath, sizeof(s_filepath) - 1);
 
+    char buffer[FM_EDIT_MAX_LINE_LEN];
+    uint16_t idx = 0;
 
-    // --------------------------------------------------------------------
-    // Удаляем '\n'.
-    // --------------------------------------------------------------------
-
-    if (len > 0 && raw_line[len - 1] == '\n') {
-        raw_line[len - 1] = '\0';
-        len--;
-    }
-
-
-    // --------------------------------------------------------------------
-    // Удаляем '\r' из Windows-окончания строки "\r\n".
-    //
-    // ESP32-файл может попасть на устройство, например, после
-    // редактирования на Windows.
-    // --------------------------------------------------------------------
-
-    if (len > 0 && raw_line[len - 1] == '\r') {
-        raw_line[len - 1] = '\0';
-    }
-
-
-    copy_line(s_lines[s_line_count], raw_line);
-    s_line_count++;
-
-
-    // --------------------------------------------------------------------
-    // ВАЖНО:
-    //
-    // fgets() читает максимум FM_EDIT_MAX_LINE_LEN - 1 символов.
-    //
-    // Если строка в файле длиннее этого значения, остаток строки
-    // всё ещё находится в FILE.
-    //
-    // Мы не хотим, чтобы этот остаток стал НОВОЙ строкой редактора.
-    //
-    // Поэтому, если буфер не закончился '\n', дочитываем остаток
-    // исходной строки и выбрасываем его.
-    // --------------------------------------------------------------------
-
-    if (strchr(raw_line, '\n') == NULL) {
-
-        int ch;
-
-        while ((ch = fgetc(f)) != '\n' && ch != EOF) {
-            // Остаток слишком длинной строки намеренно игнорируем.
+    while (fgets(buffer, sizeof(buffer), f) && idx < FM_EDIT_MAX_LINES) {
+        size_t len = strlen(buffer);
+        while (len > 0 && (buffer[len - 1] == '\n' || buffer[len - 1] == '\r')) {
+            buffer[--len] = '\0';
         }
+        strncpy(s_lines[idx], buffer, FM_EDIT_MAX_LINE_LEN - 1);
+        s_lines[idx][FM_EDIT_MAX_LINE_LEN - 1] = '\0';
+        idx++;
     }
+
+    fclose(f);
+    s_line_count = (idx > 0) ? idx : 1;
+    ESP_LOGI(TAG, "Loaded %u lines from %s", s_line_count, filepath);
+    return true;
 }
 
-
-// Закрываем файл после чтения.
-fclose(f);
-
-
-// ------------------------------------------------------------------------
-// Пустой файл представляем одной пустой строкой.
-//
-// Это упрощает UI:
-//
-// line_count никогда не бывает 0 после успешного открытия.
-// ------------------------------------------------------------------------
-
-if (s_line_count == 0) {
-    s_line_count = 1;
-    s_lines[0][0] = '\0';
-}
-
-
-ESP_LOGI(TAG,
-         "Открыт '%s' для редактирования: %u строк",
-         full_path,
-         s_line_count);
-
-return ESP_OK;
-
-}
-
-// ============================================================================
-// Сохранение
-// ============================================================================
-
-esp_err_t fm_text_edit_save(const char *full_path)
-{
-if (full_path == NULL) {
-return ESP_ERR_INVALID_ARG;
-}
-
-FILE *f = fopen(full_path, "w");
-
-if (f == NULL) {
-    ESP_LOGE(TAG,
-             "Не удалось открыть '%s' для записи",
-             full_path);
-
-    return ESP_FAIL;
-}
-
-
-// Записываем каждую строку и добавляем '\n'.
-for (uint16_t i = 0; i < s_line_count; i++) {
-
-    if (fprintf(f, "%s\n", s_lines[i]) < 0) {
-
-        ESP_LOGE(TAG,
-                 "Ошибка записи в '%s'",
-                 full_path);
-
-        fclose(f);
-        return ESP_FAIL;
+bool fm_text_edit_save(void) {
+    if (s_filepath[0] == '\0') {
+        ESP_LOGE(TAG, "No filepath specified for save");
+        return false;
     }
+    return fm_text_edit_save_as(s_filepath);
 }
 
+bool fm_text_edit_save_as(const char *filepath) {
+    if (!filepath) return false;
 
-if (fclose(f) != 0) {
+    FILE *f = fopen(filepath, "w");
+    if (!f) {
+        ESP_LOGE(TAG, "Failed to open file for writing: %s", filepath);
+        return false;
+    }
 
-    ESP_LOGE(TAG,
-             "Ошибка закрытия файла '%s'",
-             full_path);
+    for (uint16_t i = 0; i < s_line_count; i++) {
+        fprintf(f, "%s\n", s_lines[i]);
+    }
 
-    return ESP_FAIL;
+    fclose(f);
+    strncpy(s_filepath, filepath, sizeof(s_filepath) - 1);
+    ESP_LOGI(TAG, "Saved %u lines to %s", s_line_count, filepath);
+    return true;
 }
 
+bool fm_text_edit_ensure_line(uint16_t line_index) {
+    if (line_index >= FM_EDIT_MAX_LINES) return false;
 
-ESP_LOGI(TAG,
-         "Сохранено '%s': %u строк",
-         full_path,
-         s_line_count);
-
-return ESP_OK;
-
+    while (s_line_count <= line_index) {
+        s_lines[s_line_count][0] = '\0';
+        s_line_count++;
+    }
+    return true;
 }
 
-// ============================================================================
-// Закрытие / состояние
-// ============================================================================
+bool fm_text_edit_insert_line_after(uint16_t line_index) {
+    if (s_line_count >= FM_EDIT_MAX_LINES) return false;
 
-void fm_text_edit_close(void)
-{
-// Сам массив s_lines статический — освобождать его через free()
-// нельзя и не нужно.
-//
-// Нам достаточно сказать редактору, что документа больше нет.
-s_line_count = 0;
+    uint16_t target = line_index + 1;
+    if (target < s_line_count) {
+        memmove(&s_lines[target + 1], &s_lines[target], 
+                (s_line_count - target) * FM_EDIT_MAX_LINE_LEN);
+    }
+    
+    s_lines[target][0] = '\0';
+    s_line_count++;
+    return true;
 }
 
-uint16_t fm_text_edit_line_count(void)
-{
-return s_line_count;
+bool fm_text_edit_delete_line(uint16_t line_index) {
+    if (line_index >= s_line_count || s_line_count <= 1) return false;
+
+    if (line_index < s_line_count - 1) {
+        memmove(&s_lines[line_index], &s_lines[line_index + 1], 
+                (s_line_count - line_index - 1) * FM_EDIT_MAX_LINE_LEN);
+    }
+
+    s_line_count--;
+    s_lines[s_line_count][0] = '\0';
+    return true;
 }
 
-// ============================================================================
-// Работа со строками
-// ============================================================================
+bool fm_text_edit_insert_text(uint16_t line, uint16_t column, const char *text) {
+    if (!text || text[0] == '\0') return true;
+    if (!fm_text_edit_ensure_line(line)) return false;
 
-const char *fm_text_edit_get_line(uint16_t index)
-{
-if (index >= s_line_count) {
-return "";
+    char *target_line = s_lines[line];
+    size_t current_len = strlen(target_line);
+    size_t insert_len = strlen(text);
+
+    // Дополняем пробелами, если курсор ушел правее конца строки
+    if (column > current_len) {
+        if (column >= FM_EDIT_MAX_LINE_LEN - 1) return false;
+        memset(target_line + current_len, ' ', column - current_len);
+        target_line[column] = '\0';
+        current_len = column;
+    }
+
+    if (current_len + insert_len >= FM_EDIT_MAX_LINE_LEN) {
+        return false; 
+    }
+
+    // Сдвигаем и вставляем
+    memmove(target_line + column + insert_len, 
+            target_line + column, 
+            current_len - column + 1);
+
+    memcpy(target_line + column, text, insert_len);
+    return true;
 }
 
-return s_lines[index];
+bool fm_text_edit_delete_char(uint16_t line, uint16_t column) {
+    if (line >= s_line_count) return false;
 
+    char *target_line = s_lines[line];
+    size_t current_len = strlen(target_line);
+
+    if (column >= current_len) return false;
+
+    memmove(target_line + column, 
+            target_line + column + 1, 
+            current_len - column);
+
+    return true;
 }
 
-void fm_text_edit_set_line(uint16_t index, const char *text)
-{
-if (index >= s_line_count) {
-return;
-}
-
-copy_line(s_lines[index], text);
-
-}
-
-void fm_text_edit_insert_line_after(uint16_t index, const char *text)
-{
-if (s_line_count >= FM_EDIT_MAX_LINES) {
-
-    ESP_LOGW(TAG,
-             "Достигнут лимит строк (%d) — новая строка не добавлена",
-             FM_EDIT_MAX_LINES);
-
-    return;
-}
-
-
-// Если документ почему-то ещё пустой, просто создаём первую строку.
-//
-// В нормальном сценарии после open() минимум одна строка всегда есть.
-if (s_line_count == 0) {
-
-    copy_line(s_lines[0], text);
-    s_line_count = 1;
-
-    return;
-}
-
-
-// Если индекс за пределами документа, вставляем после последней строки.
-if (index >= s_line_count) {
-    index = s_line_count - 1;
-}
-
-
-// ------------------------------------------------------------------------
-// Освобождаем место под новую строку.
-//
-// Было:
-//
-//     0 aaa
-//     1 bbb
-//     2 ccc
-//
-// insert_after(0)
-//
-// Станет:
-//
-//     0 aaa
-//     1 NEW
-//     2 bbb
-//     3 ccc
-// ------------------------------------------------------------------------
-
-for (uint16_t i = s_line_count; i > index + 1; i--) {
-    strcpy(s_lines[i], s_lines[i - 1]);
-}
-
-
-copy_line(s_lines[index + 1], text);
-
-s_line_count++;
-
-}
-
-void fm_text_edit_delete_line(uint16_t index)
-{
-if (index >= s_line_count) {
-return;
-}
-
-// Документ никогда не оставляем без строк.
-if (s_line_count == 1) {
-
-    s_lines[0][0] = '\0';
-
-    return;
-}
-
-
-// Сдвигаем все следующие строки вверх.
-for (uint16_t i = index; i < s_line_count - 1; i++) {
-    strcpy(s_lines[i], s_lines[i + 1]);
-}
-
-
-s_line_count--;
-
+bool fm_text_edit_backspace(uint16_t line, uint16_t column) {
+    if (column == 0 || line >= s_line_count) return false;
+    return fm_text_edit_delete_char(line, column - 1);
 }
