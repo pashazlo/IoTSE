@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 
 static const char *TAG = "FM_TEXT_EDIT";
 
