@@ -176,8 +176,43 @@ void ui_file_editor_draw(gfx_canvas_t *canvas) {
             size_t line_len = strlen(full_line);
 
             if (s_editor.scroll_x < line_len) {
-                const char *visible_text = full_line + s_editor.scroll_x;
-                gfx_canvas_draw_str(canvas, text_x_offset, y + CHAR_HEIGHT - 2, visible_text, UI_FONT, 0xFFFF);
+               char visible_buf[VISIBLE_COLS + 1];
+
+const char *full_line =
+    fm_text_edit_get_line(line_idx);
+
+if (full_line != NULL) {
+
+    size_t line_len = strlen(full_line);
+
+    if (s_editor.scroll_x < line_len) {
+
+        size_t available =
+            line_len - s_editor.scroll_x;
+
+        size_t copy_len =
+            available > VISIBLE_COLS
+            ? VISIBLE_COLS
+            : available;
+
+        memcpy(
+            visible_buf,
+            full_line + s_editor.scroll_x,
+            copy_len
+        );
+
+        visible_buf[copy_len] = '\0';
+
+        gfx_canvas_draw_str(
+            canvas,
+            text_x_offset,
+            y + CHAR_HEIGHT - 2,
+            visible_buf,
+            UI_FONT,
+            0xFFFF
+        );
+    }
+}
             }
         }
 
