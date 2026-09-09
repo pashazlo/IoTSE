@@ -259,7 +259,7 @@ static void handle_file_editor_event(ui_event_t evt, gfx_canvas_t *canvas)
         case UI_EVT_RIGHT: {
             // Новая пустая строка сразу после текущей, курсор — на неё.
             uint16_t sel = ui_focus_get(UI_FOCUS_FILE_EDITOR);
-            fm_text_edit_insert_line_after(sel, "");
+            fm_text_edit_insert_line_after(sel);
             ui_focus_move(UI_FOCUS_FILE_EDITOR, (uint8_t)fm_text_edit_line_count(), UI_EVT_DOWN);
             ui_render(canvas);
             break;
