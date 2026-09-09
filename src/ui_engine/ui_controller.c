@@ -71,8 +71,6 @@ static void handle_keyboard_result(void)
         case KB_PURPOSE_RENAME:
             if (text[0] == '\0') {
                 // Пустое имя при переименовании — это сигнал "удалить".
-                // Так на 5 кнопках без отдельной клавиши Delete можно
-                // и переименовать, и удалить одним и тем же жестом (RIGHT).
                 fm_delete_entry(s_kb_target_name, s_kb_target_is_dir);
             } else if (strcmp(text, s_kb_target_name) != 0) {
                 fm_rename(s_kb_target_name, text);
@@ -89,8 +87,6 @@ static void handle_keyboard_result(void)
 
     s_kb_purpose = KB_PURPOSE_NONE;
 
-    // Содержимое директории могло измениться (создали/удалили/
-    // переименовали) — индекс фокуса мог указывать теперь "в никуда".
     if (ui_screen_get() == UI_SCREEN_FILE_BROWSER) {
         ui_focus_reset(UI_FOCUS_FILE_BROWSER);
     }
@@ -119,8 +115,6 @@ static void handle_file_volumes_event(ui_event_t evt, gfx_canvas_t *canvas)
                 ui_focus_reset(UI_FOCUS_FILE_BROWSER);
                 ui_screen_set(UI_SCREEN_FILE_BROWSER);
             }
-            // При неудаче (том недоступен, например SD не вставлена)
-            // остаёмся на месте — рендер сам решает, как это показать.
             ui_render(canvas);
             break;
         }
@@ -176,7 +170,8 @@ static void handle_file_browser_event(ui_event_t evt, gfx_canvas_t *canvas)
                         }
                     } else {
                         fm_build_full_path(entry->name, s_editor_path, sizeof(s_editor_path));
-                        if (fm_text_edit_open(s_editor_path) == ESP_OK) {
+                        // Исправлено: fm_text_edit_open возвращает bool
+                        if (fm_text_edit_open(s_editor_path)) {
                             ui_focus_reset(UI_FOCUS_FILE_EDITOR);
                             ui_screen_set(UI_SCREEN_FILE_EDITOR);
                         }
@@ -190,8 +185,6 @@ static void handle_file_browser_event(ui_event_t evt, gfx_canvas_t *canvas)
 
         case UI_EVT_RIGHT: {
 
-            // Переименовать/удалить — только для настоящих записей,
-            // не для синтетических пунктов "[+ New ...]".
             uint8_t sel = ui_focus_get(UI_FOCUS_FILE_BROWSER);
 
             if (sel >= FM_BROWSER_SYNTH_COUNT) {
@@ -216,7 +209,6 @@ static void handle_file_browser_event(ui_event_t evt, gfx_canvas_t *canvas)
         case UI_EVT_LEFT:
 
             if (!fm_go_up()) {
-                // Уже в корне тома — на экран выбора тома.
                 ui_screen_set(UI_SCREEN_FILE_VOLUMES);
             } else {
                 ui_focus_reset(UI_FOCUS_FILE_BROWSER);
@@ -257,7 +249,6 @@ static void handle_file_editor_event(ui_event_t evt, gfx_canvas_t *canvas)
         }
 
         case UI_EVT_RIGHT: {
-            // Новая пустая строка сразу после текущей, курсор — на неё.
             uint16_t sel = ui_focus_get(UI_FOCUS_FILE_EDITOR);
             fm_text_edit_insert_line_after(sel);
             ui_focus_move(UI_FOCUS_FILE_EDITOR, (uint8_t)fm_text_edit_line_count(), UI_EVT_DOWN);
@@ -266,7 +257,6 @@ static void handle_file_editor_event(ui_event_t evt, gfx_canvas_t *canvas)
         }
 
         case UI_EVT_LEFT:
-            // Сохраняем и возвращаемся к списку файлов
             fm_text_edit_save();
             fm_text_edit_close();
             ui_screen_set(UI_SCREEN_FILE_BROWSER);
@@ -317,14 +307,11 @@ void ui_controller_handle_event(
     gfx_canvas_t *canvas
 )
 {
-    // Клавиатура — модальная поверх всего. Пока она открыта, любые
-    // события идут ТОЛЬКО в неё, обычный контроллер экрана не видит их.
     if (ui_keyboard_is_open()) {
 
         ui_keyboard_handle_event(evt);
 
         if (!ui_keyboard_is_open()) {
-            // Закрылась именно в этом вызове — разобрать результат.
             handle_keyboard_result();
         }
 
@@ -355,7 +342,6 @@ void ui_controller_handle_event(
     const ui_menu_screen_t *menu = ui_menu_get_screen(screen);
 
     if (menu == NULL) {
-        // Сплэш либо ещё не описанный экран — обрабатывать нечем.
         return;
     }
 
