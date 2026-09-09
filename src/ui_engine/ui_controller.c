@@ -7,6 +7,7 @@
 #include "ui_focus.h"
 #include "ui_render.h"
 #include "ui_keyboard.h"
+#include "ui_file_editor.h"
 
 #include "fm.h"
 #include "fm_text_edit.h"
@@ -223,50 +224,6 @@ static void handle_file_browser_event(ui_event_t evt, gfx_canvas_t *canvas)
 }
 
 
-// ============================================================================
-// Экран редактора текста
-// ============================================================================
-
-static void handle_file_editor_event(ui_event_t evt, gfx_canvas_t *canvas)
-{
-    uint8_t count = (uint8_t)fm_text_edit_line_count();
-
-    switch (evt) {
-
-        case UI_EVT_UP:
-        case UI_EVT_DOWN:
-            ui_focus_move(UI_FOCUS_FILE_EDITOR, count, evt);
-            ui_render(canvas);
-            break;
-
-        case UI_EVT_SELECT: {
-            uint16_t sel = ui_focus_get(UI_FOCUS_FILE_EDITOR);
-            s_kb_purpose = KB_PURPOSE_EDIT_LINE;
-            s_kb_target_line = sel;
-            ui_keyboard_open(fm_text_edit_get_line(sel));
-            ui_render(canvas);
-            break;
-        }
-
-        case UI_EVT_RIGHT: {
-            uint16_t sel = ui_focus_get(UI_FOCUS_FILE_EDITOR);
-            fm_text_edit_insert_line_after(sel);
-            ui_focus_move(UI_FOCUS_FILE_EDITOR, (uint8_t)fm_text_edit_line_count(), UI_EVT_DOWN);
-            ui_render(canvas);
-            break;
-        }
-
-        case UI_EVT_LEFT:
-            fm_text_edit_save();
-            fm_text_edit_close();
-            ui_screen_set(UI_SCREEN_FILE_BROWSER);
-            ui_render(canvas);
-            break;
-
-        default:
-            break;
-    }
-}
 
 
 // ============================================================================
@@ -332,8 +289,9 @@ void ui_controller_handle_event(
             return;
 
         case UI_SCREEN_FILE_EDITOR:
-            handle_file_editor_event(evt, canvas);
-            return;
+                ui_file_editor_handle_event(evt);
+                ui_render(canvas);
+                return;
 
         default:
             break;
