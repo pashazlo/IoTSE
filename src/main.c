@@ -207,7 +207,7 @@ void app_main(void)
     BaseType_t task_created = xTaskCreate(
         ui_task,
         "ui",
-        4096,
+        16384,
         NULL,
         4,
         NULL
