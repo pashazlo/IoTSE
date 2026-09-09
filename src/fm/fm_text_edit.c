@@ -7,7 +7,7 @@
 static const char *TAG = "FM_TEXT_EDIT";
 
 // Выделяем большой массив статически во избежание Stack Overflow
-static char s_lines[FM_EDIT_MAX_LINES][FM_EDIT_MAX_LINE_LEN];
+static char (*s_lines)[FM_EDIT_MAX_LINE_LEN] = NULL;
 static uint16_t s_line_count = 0;
 static char s_filepath[256] = {0};
 
