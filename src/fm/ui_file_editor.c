@@ -96,12 +96,14 @@ void ui_file_editor_handle_event(ui_event_t evt) {
             }
             break;
 
-        case UI_EVT_DOWN:
-            if (s_editor.cursor_line < FM_EDIT_MAX_LINES - 1) {
-                s_editor.cursor_line++;
-                fm_text_edit_ensure_line(s_editor.cursor_line);
-            }
-            break;
+            case UI_EVT_DOWN:
+
+                if (s_editor.cursor_line + 1 <fm_text_edit_line_count()) {
+
+                    s_editor.cursor_line++;
+                    }
+
+                break;
 
         case UI_EVT_LEFT:
             if (s_editor.cursor_column > 0) {
