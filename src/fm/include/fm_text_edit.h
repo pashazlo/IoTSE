@@ -5,8 +5,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#define FM_EDIT_MAX_LINES    500
-#define FM_EDIT_MAX_LINE_LEN 256
+#define FM_EDIT_MAX_LINES    100
+#define FM_EDIT_MAX_LINE_LEN 64
 
 // --- Инициализация и системные функции ---
 void fm_text_edit_init(void);
