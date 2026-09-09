@@ -15,7 +15,7 @@ void fm_text_edit_close(void);
 
 // --- Загрузка / Сохранение ---
 bool fm_text_edit_open(const char *filepath);
-bool fm_text_edit_save(void);
+bool fm_text_edit_save(const char *filepath);
 bool fm_text_edit_save_as(const char *filepath);
 const char *fm_text_edit_get_filepath(void);
 
