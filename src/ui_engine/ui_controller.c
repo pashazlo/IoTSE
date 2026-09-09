@@ -170,11 +170,11 @@ static void handle_file_browser_event(ui_event_t evt, gfx_canvas_t *canvas)
                             ui_focus_reset(UI_FOCUS_FILE_BROWSER);
                         }
                     } else {
-                        fm_build_full_path(entry->name, s_editor_path, sizeof(s_editor_path));
-                        // Исправлено: fm_text_edit_open возвращает bool
-                        if (fm_text_edit_open(s_editor_path)) {
-                            ui_focus_reset(UI_FOCUS_FILE_EDITOR);
-                            ui_screen_set(UI_SCREEN_FILE_EDITOR);
+                       fm_build_full_path(entry->name, s_editor_path, sizeof(s_editor_path));
+
+                                            if (ui_file_editor_open_file(s_editor_path)) {
+
+                                                    ui_screen_set(UI_SCREEN_FILE_EDITOR);
                         }
                     }
                 }
