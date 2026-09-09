@@ -4,15 +4,10 @@
 #include <math.h>
 
 // Скорость "подъезда" — доля ОСТАВШЕГОСЯ расстояния, которую курсор
-// проезжает за один шаг анимации (0..1). Больше значение — быстрее
-// и резче; меньше — плавнее и медленнее. 0.35 — хороший компромисс
-// для меню на 20px строках.
+// проезжает за один шаг анимации (0..1).
 #define UI_CURSOR_LERP_SPEED   0.35f
 
-// Порог в пикселях, ближе которого считаем, что курсор "доехал" до
-// цели по всем 4 параметрам (x, y, w, h), и останавливаем анимацию.
-// Без этого lerp приближался бы к цели бесконечно, никогда не достигая
-// ровно 0.
+// Порог в пикселях, ближе которого считаем, что курсор "доехал".
 #define UI_CURSOR_SNAP_EPS     0.5f
 
 // Длина одного "уса" уголка-скобки в пикселях.
@@ -28,8 +23,7 @@ void ui_cursor_reset(ui_cursor_t *cur)
 void ui_cursor_set_target(ui_cursor_t *cur, int16_t x, int16_t y, int16_t w, int16_t h)
 {
     if (!cur->initialized) {
-        // Первый показ курсора — сразу появляется на месте,
-        // не летит через весь экран из точки (0,0).
+        // Первый показ курсора — сразу появляется на месте
         cur->x = (float)x;
         cur->y = (float)y;
         cur->w = (float)w;
@@ -39,10 +33,6 @@ void ui_cursor_set_target(ui_cursor_t *cur, int16_t x, int16_t y, int16_t w, int
 
     } else if ((float)x != cur->target_x || (float)y != cur->target_y ||
                (float)w != cur->target_w || (float)h != cur->target_h) {
-        // Цель реально сдвинулась относительно прошлого кадра —
-        // включаем анимацию. Если target тот же самый (например,
-        // экран просто перерисовался раз в секунду ради часов),
-        // анимацию заново не запускаем.
         cur->animating = true;
     }
 
@@ -71,7 +61,6 @@ void ui_cursor_step(ui_cursor_t *cur)
 
     if (fabsf(dx) < UI_CURSOR_SNAP_EPS && fabsf(dy) < UI_CURSOR_SNAP_EPS &&
         fabsf(dw) < UI_CURSOR_SNAP_EPS && fabsf(dh) < UI_CURSOR_SNAP_EPS) {
-        // Долетели — прилипаем ровно к цели и выключаем анимацию.
         cur->x = cur->target_x;
         cur->y = cur->target_y;
         cur->w = cur->target_w;
