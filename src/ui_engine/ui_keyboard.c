@@ -1,6 +1,9 @@
 #include "ui_keyboard.h"
 
 #include <string.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <limits.h>
 
 #include "ui_focus.h"
 #include "display.h"
@@ -384,6 +387,234 @@ bool ui_keyboard_is_open(void)
 return s_is_open;
 }
 
+// ============================================================================
+// Навигация по клавиатуре
+// ============================================================================
+
+static bool boxes_overlap_vertical(
+    const ui_bbox_t *a,
+    const ui_bbox_t *b
+)
+{
+    return !(
+        a->y + a->h <= b->y ||
+        b->y + b->h <= a->y
+    );
+}
+
+
+static bool boxes_overlap_horizontal(
+    const ui_bbox_t *a,
+    const ui_bbox_t *b
+)
+{
+    return !(
+        a->x + a->w <= b->x ||
+        b->x + b->w <= a->x
+    );
+}
+
+
+static int keyboard_find_next(
+    uint8_t current,
+    ui_event_t direction
+)
+{
+    if (current >= s_key_count) {
+        return -1;
+    }
+
+    const ui_bbox_t *cur = &s_key_boxes[current];
+
+    int best_index = -1;
+    int best_score = INT32_MAX;
+
+    int cur_center_x = cur->x + cur->w / 2;
+    int cur_center_y = cur->y + cur->h / 2;
+
+
+    // ------------------------------------------------------------------------
+    // Первый проход:
+    //
+    // Для LEFT/RIGHT предпочитаем клавиши того же ряда.
+    //
+    // Для UP/DOWN предпочитаем клавиши, пересекающиеся по X.
+    //
+    // Это критично для SPACE шириной 120 пикселей.
+    // ------------------------------------------------------------------------
+
+    for (int pass = 0; pass < 2; pass++) {
+
+        best_index = -1;
+        best_score = INT32_MAX;
+
+        for (uint8_t i = 0; i < s_key_count; i++) {
+
+            if (i == current) {
+                continue;
+            }
+
+            const ui_bbox_t *candidate = &s_key_boxes[i];
+
+            int cand_center_x =
+                candidate->x + candidate->w / 2;
+
+            int cand_center_y =
+                candidate->y + candidate->h / 2;
+
+
+            bool valid_direction = false;
+            bool preferred_alignment = false;
+
+            int primary_distance = 0;
+            int secondary_distance = 0;
+
+
+            switch (direction) {
+
+                // ============================================================
+                // LEFT
+                // ============================================================
+
+                case UI_EVT_LEFT:
+
+                    if (cand_center_x >= cur_center_x) {
+                        continue;
+                    }
+
+                    valid_direction = true;
+
+                    preferred_alignment =
+                        boxes_overlap_vertical(cur, candidate);
+
+                    primary_distance =
+                        cur_center_x - cand_center_x;
+
+                    secondary_distance =
+                        abs(cand_center_y - cur_center_y);
+
+                    break;
+
+
+                // ============================================================
+                // RIGHT
+                // ============================================================
+
+                case UI_EVT_RIGHT:
+
+                    if (cand_center_x <= cur_center_x) {
+                        continue;
+                    }
+
+                    valid_direction = true;
+
+                    preferred_alignment =
+                        boxes_overlap_vertical(cur, candidate);
+
+                    primary_distance =
+                        cand_center_x - cur_center_x;
+
+                    secondary_distance =
+                        abs(cand_center_y - cur_center_y);
+
+                    break;
+
+
+                // ============================================================
+                // UP
+                // ============================================================
+
+                case UI_EVT_UP:
+
+                    if (cand_center_y >= cur_center_y) {
+                        continue;
+                    }
+
+                    valid_direction = true;
+
+                    preferred_alignment =
+                        boxes_overlap_horizontal(cur, candidate);
+
+                    primary_distance =
+                        cur_center_y - cand_center_y;
+
+                    secondary_distance =
+                        abs(cand_center_x - cur_center_x);
+
+                    break;
+
+
+                // ============================================================
+                // DOWN
+                // ============================================================
+
+                case UI_EVT_DOWN:
+
+                    if (cand_center_y <= cur_center_y) {
+                        continue;
+                    }
+
+                    valid_direction = true;
+
+                    preferred_alignment =
+                        boxes_overlap_horizontal(cur, candidate);
+
+                    primary_distance =
+                        cand_center_y - cur_center_y;
+
+                    secondary_distance =
+                        abs(cand_center_x - cur_center_x);
+
+                    break;
+
+
+                default:
+                    continue;
+            }
+
+
+            if (!valid_direction) {
+                continue;
+            }
+
+
+            // ----------------------------------------------------------------
+            // Первый проход принимает только "логически выровненные" клавиши.
+            //
+            // Второй проход — fallback, если таких вообще нет.
+            // ----------------------------------------------------------------
+
+            if (pass == 0 && !preferred_alignment) {
+                continue;
+            }
+
+
+            // Основное направление важнее бокового отклонения.
+            int score =
+                primary_distance * 100 +
+                secondary_distance;
+
+
+            if (score < best_score) {
+
+                best_score = score;
+                best_index = i;
+
+            }
+        }
+
+
+        // Если на первом проходе нашли хороший объект —
+        // сразу возвращаем его.
+        if (best_index >= 0) {
+            return best_index;
+        }
+    }
+
+
+    return -1;
+}
+
 void ui_keyboard_handle_event(ui_event_t evt)
 {
 if (!s_is_open) {
@@ -417,13 +648,11 @@ switch (evt) {
         // Это настоящая 2D-навигация:
         // клавиатура не хранит row/column, а использует геометрию
         // объектов через ui_focus_find_nearest().
-        int8_t next =
-            ui_focus_find_nearest(
-                s_key_boxes,
-                s_key_count,
-                s_selected_key,
-                evt
-            );
+       int next =
+    keyboard_find_next(
+        s_selected_key,
+        evt
+    );
 
 
         if (next >= 0) {
