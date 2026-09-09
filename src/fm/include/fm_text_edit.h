@@ -7,12 +7,22 @@
 
 
 // ============================================================================
-// Configuration
+// Editor limits
 // ============================================================================
 
-#define FM_EDIT_MAX_LINES       100
-#define FM_EDIT_MAX_LINE_LEN    64
-#define FM_EDIT_MAX_PATH_LEN    256
+// Максимальное количество строк в документе.
+#define FM_EDIT_MAX_LINES        100
+
+// Максимальная длина одной строки ВКЛЮЧАЯ '\0'.
+#define FM_EDIT_MAX_LINE_LEN     64
+
+
+// Если FM_MAX_PATH_LEN определён в fm.h,
+// лучше подключить fm.h вместо собственного числа.
+
+#ifndef FM_MAX_PATH_LEN
+#define FM_MAX_PATH_LEN          256
+#endif
 
 
 // ============================================================================
@@ -20,7 +30,9 @@
 // ============================================================================
 
 void fm_text_edit_init(void);
+
 void fm_text_edit_clear(void);
+
 void fm_text_edit_close(void);
 
 
@@ -28,9 +40,15 @@ void fm_text_edit_close(void);
 // File operations
 // ============================================================================
 
-bool fm_text_edit_open(const char *filepath);
+bool fm_text_edit_open(
+    const char *filepath
+);
+
 bool fm_text_edit_save(void);
-bool fm_text_edit_save_as(const char *filepath);
+
+bool fm_text_edit_save_as(
+    const char *filepath
+);
 
 const char *fm_text_edit_get_filepath(void);
 
@@ -41,9 +59,13 @@ const char *fm_text_edit_get_filepath(void);
 
 uint16_t fm_text_edit_line_count(void);
 
-const char *fm_text_edit_get_line(uint16_t line_index);
+const char *fm_text_edit_get_line(
+    uint16_t line_index
+);
 
-uint16_t fm_text_edit_line_length(uint16_t line_index);
+uint16_t fm_text_edit_line_length(
+    uint16_t line_index
+);
 
 
 // ============================================================================
@@ -87,5 +109,6 @@ bool fm_text_edit_backspace(
     uint16_t line,
     uint16_t column
 );
+
 
 #endif // FM_TEXT_EDIT_H
