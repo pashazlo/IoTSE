@@ -27,6 +27,11 @@ void fm_text_edit_clear(void) {
 
 void fm_text_edit_close(void) {
     fm_text_edit_clear();
+
+    if (s_lines != NULL) {
+        heap_caps_free(s_lines);
+        s_lines = NULL;
+    }
 }
 
 uint16_t fm_text_edit_line_count(void) {
