@@ -11,6 +11,7 @@
 
 #include "fm.h"
 #include "fm_text_edit.h"
+#include "esp_log.h"
 
 // ============================================================================
 // Зачем открыта клавиатура — контекст, чтобы знать, что делать
@@ -170,9 +171,10 @@ static void handle_file_browser_event(ui_event_t evt, gfx_canvas_t *canvas)
                             ui_focus_reset(UI_FOCUS_FILE_BROWSER);
                         }
                     } else {
-                       fm_build_full_path(entry->name, s_editor_path, sizeof(s_editor_path));
+                       esp_err_t path_err = fm_build_full_path(entry->name, s_editor_path, sizeof(s_editor_path));
 
-                                            if (ui_file_editor_open_file(s_editor_path)) {
+                                            if (path_err == ESP_OK && ui_file_editor_open_file(s_editor_path)) {
+                        ui_focus_reset(UI_FOCUS_FILE_EDITOR);
 
                                                     ui_screen_set(UI_SCREEN_FILE_EDITOR);
                         }
@@ -289,9 +291,30 @@ void ui_controller_handle_event(
             return;
 
         case UI_SCREEN_FILE_EDITOR:
-                ui_file_editor_handle_event(evt);
-                ui_render(canvas);
-                return;
+            switch (evt) {
+                case UI_EVT_UP:
+                case UI_EVT_DOWN:
+                    ui_focus_move(UI_FOCUS_FILE_EDITOR,
+                                  (uint8_t)fm_text_edit_line_count(), evt);
+                    break;
+                case UI_EVT_SELECT:
+                    s_kb_target_line = ui_focus_get(UI_FOCUS_FILE_EDITOR);
+                    s_kb_purpose = KB_PURPOSE_EDIT_LINE;
+                    ui_keyboard_open(fm_text_edit_get_line(s_kb_target_line));
+                    break;
+                case UI_EVT_LEFT:
+                    if (fm_text_edit_save()) {
+                        fm_text_edit_close();
+                        ui_screen_set(UI_SCREEN_FILE_BROWSER);
+                    } else {
+                        ESP_LOGE("UI", "Save failed; document retained in editor");
+                    }
+                    break;
+                default:
+                    break;
+            }
+            ui_render(canvas);
+            return;
 
         default:
             break;
