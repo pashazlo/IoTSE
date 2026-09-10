@@ -548,73 +548,53 @@ bool fm_text_edit_open(const char *filepath)
 
     if (file == NULL) {
 
-        // Если файла нет — создаём пустой документ.
+        // Ошибка открытия: не выдаём пустой документ за успешно загруженный.
         ESP_LOGW(
             TAG,
-            "File not found, opening empty document: %s",
+            "Failed to open file: %s",
             filepath
         );
 
 
-        copy_line(
-            s_filepath,
-            filepath
-        );
+        snprintf(s_filepath, sizeof(s_filepath), "%s", filepath);
 
 
-        return true;
+        return false;
     }
-
-
-    char buffer[FM_EDIT_MAX_LINE_LEN];
 
 
     uint16_t line = 0;
-
-
-    while (
-        fgets(buffer, sizeof(buffer), file) != NULL &&
-        line < FM_EDIT_MAX_LINES
-    ) {
-
-        // Убираем \n и \r.
-        buffer[
-            strcspn(
-                buffer,
-                "\r\n"
-            )
-        ] = '\0';
-
-
-        copy_line(
-            s_lines[line],
-            buffer
-        );
-
-
-        line++;
+    size_t col = 0;
+    int ch;
+    bool too_large = false;
+    while ((ch = fgetc(file)) != EOF) {
+        if (line >= FM_EDIT_MAX_LINES) { too_large = true; break; }
+        if (ch == '\r') continue;
+        if (ch == '\n') {
+            s_lines[line][col] = '\0';
+            line++;
+            col = 0;
+        } else {
+            if (col >= FM_EDIT_MAX_LINE_LEN - 1 || ch == 0) {
+                too_large = true;
+                break;
+            }
+            s_lines[line][col++] = (char)ch;
+        }
     }
-
-
-    fclose(file);
-
-
-    if (line == 0) {
-
-        s_line_count = 1;
-
-        s_lines[0][0] = '\0';
-
-    } else {
-
-        s_line_count = line;
+    bool read_failed = ferror(file) != 0;
+    if (fclose(file) != 0) read_failed = true;
+    if (read_failed || too_large) {
+        s_filepath[0] = '\0';
+        ESP_LOGE(TAG, "Cannot edit file: read error or text exceeds editor limits");
+        return false;
     }
+    if (col > 0) line++;
+    s_line_count = line ? line : 1;
 
-
-    copy_line(
-        s_filepath,
-        filepath
-    );
+    if (filepath != s_filepath) {
+        snprintf(s_filepath, sizeof(s_filepath), "%s", filepath);
+    }
 
 
     ESP_LOGI(
@@ -687,31 +667,29 @@ bool fm_text_edit_save_as(const char *filepath)
         i++
     ) {
 
-        fputs(
-            s_lines[i],
-            file
-        );
+        if (fputs(s_lines[i], file) == EOF) {
+            fclose(file);
+            return false;
+        }
 
 
         // Добавляем newline после каждой строки,
         // кроме последней.
         if (i < s_line_count - 1) {
 
-            fputc(
-                '\n',
-                file
-            );
+            if (fputc('\n', file) == EOF) {
+                fclose(file);
+                return false;
+            }
         }
     }
 
 
-    fclose(file);
+    if (fclose(file) != 0) return false;
 
-
-    copy_line(
-        s_filepath,
-        filepath
-    );
+    if (filepath != s_filepath) {
+        snprintf(s_filepath, sizeof(s_filepath), "%s", filepath);
+    }
 
 
     ESP_LOGI(
@@ -752,3 +730,4 @@ void fm_text_edit_close(void)
 
     ESP_LOGI(TAG, "Editor closed");
 }
+
