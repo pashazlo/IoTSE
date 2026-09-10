@@ -117,7 +117,7 @@ void spi_bus_lock(void)
 }
 
 
-void spi_bus_unlock(void)
+bool spi_bus_lock(TickType_t timeout)
 {
     if (s_spi_mutex == NULL) {
         ESP_LOGE(TAG, "unlock: SPI bus is not initialized");
