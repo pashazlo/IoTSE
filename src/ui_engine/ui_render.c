@@ -7,6 +7,7 @@
 #include "ui_clock.h"
 #include "ui_logo.h"
 #include "ui_keyboard.h"
+#include "ui_popup.h"
 #include <string.h>
 
 #include "fm.h"
@@ -41,6 +42,7 @@ static ui_cursor_t s_cursor;
 
 bool ui_render_cursor_is_animating(void)
 {
+    if (ui_popup_is_open()) return ui_popup_is_animating();
     return s_cursor.animating;
 }
 
@@ -56,6 +58,7 @@ static void place_cursor_on_text(
     const char *text
 )
 {
+    if (ui_popup_is_open()) return;
     int16_t text_w = gfx_canvas_measure_text_width(UI_FONT, text);
 
     int16_t x = text_x - UI_CURSOR_PAD;
@@ -410,6 +413,8 @@ void ui_render(gfx_canvas_t *canvas)
     if (ui_keyboard_is_open()) {
         ui_keyboard_draw(canvas);
     }
+
+    ui_popup_draw(canvas);
 
     gfx_canvas_flush(canvas);
 }
