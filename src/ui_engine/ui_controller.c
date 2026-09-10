@@ -7,6 +7,7 @@
 #include "ui_focus.h"
 #include "ui_render.h"
 #include "ui_keyboard.h"
+#include "ui_popup.h"
 #include "ui_file_editor.h"
 
 #include "fm.h"
@@ -71,11 +72,12 @@ static void handle_keyboard_result(void)
             break;
 
         case KB_PURPOSE_RENAME:
-            if (text[0] == '\0') {
-                // Пустое имя при переименовании — это сигнал "удалить".
-                fm_delete_entry(s_kb_target_name, s_kb_target_is_dir);
-            } else if (strcmp(text, s_kb_target_name) != 0) {
-                fm_rename(s_kb_target_name, text);
+            if (text[0] != '\0' && strcmp(text, s_kb_target_name) != 0) {
+                esp_err_t err = fm_rename(s_kb_target_name, text);
+                if (err != ESP_OK) {
+                    ESP_LOGE("UI", "Rename failed: %s", esp_err_to_name(err));
+                    ui_popup_show_error("Rename failed");
+                }
             }
             break;
 
@@ -186,25 +188,18 @@ static void handle_file_browser_event(ui_event_t evt, gfx_canvas_t *canvas)
             break;
         }
 
-        case UI_EVT_RIGHT: {
-
+        case UI_EVT_CONTEXT: {
             uint8_t sel = ui_focus_get(UI_FOCUS_FILE_BROWSER);
-
             if (sel >= FM_BROWSER_SYNTH_COUNT) {
-
                 const fm_entry_t *entry = fm_get_cached_entry(sel - FM_BROWSER_SYNTH_COUNT);
-
-                if (entry != NULL) {
-                    s_kb_purpose = KB_PURPOSE_RENAME;
-                    s_kb_target_is_dir = entry->is_dir;
-
+                if (entry) {
+                    /* Snapshot target: popup navigation must not change browser focus. */
                     strncpy(s_kb_target_name, entry->name, sizeof(s_kb_target_name) - 1);
                     s_kb_target_name[sizeof(s_kb_target_name) - 1] = '\0';
-
-                    ui_keyboard_open(entry->name);
+                    s_kb_target_is_dir = entry->is_dir;
+                    ui_popup_open(s_kb_target_name, s_kb_target_is_dir);
                 }
             }
-
             ui_render(canvas);
             break;
         }
@@ -266,6 +261,25 @@ void ui_controller_handle_event(
     gfx_canvas_t *canvas
 )
 {
+    /* Modal dispatch comes before every underlying screen handler. */
+    if (ui_popup_is_open()) {
+        ui_popup_result_t result = ui_popup_handle_event(evt);
+        if (result == UI_POPUP_RENAME) {
+            s_kb_purpose = KB_PURPOSE_RENAME;
+            ui_keyboard_open(s_kb_target_name);
+        } else if (result == UI_POPUP_DELETE) {
+            esp_err_t err = fm_delete_entry(s_kb_target_name, s_kb_target_is_dir);
+            if (err == ESP_OK) {
+                ui_focus_reset(UI_FOCUS_FILE_BROWSER);
+            } else {
+                ESP_LOGE("UI", "Delete failed: %s", esp_err_to_name(err));
+                ui_popup_show_error("Delete failed");
+            }
+        }
+        ui_render(canvas);
+        return;
+    }
+
     if (ui_keyboard_is_open()) {
 
         ui_keyboard_handle_event(evt);
