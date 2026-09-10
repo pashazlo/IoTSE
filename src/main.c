@@ -11,6 +11,7 @@
 
 #include "ui.h"
 #include "buttons.h"
+#include <stdbool.h>
 
 
 static const char *TAG = "app_main";
@@ -20,57 +21,51 @@ static const char *TAG = "app_main";
 // Мост: Buttons -> UI
 // ============================================================================
 
+#define SELECT_HOLD_MS 700
+
 static void input_bridge_task(void *arg)
 {
+    (void)arg;
     QueueHandle_t button_queue = buttons_get_queue();
-
-    if (button_queue == NULL) {
+    if (!button_queue) {
         ESP_LOGE(TAG, "Button queue is NULL");
         vTaskDelete(NULL);
         return;
     }
-
-    button_event_t button_evt;
-
+    bool select_down = false, hold_sent = false;
+    TickType_t select_started = 0;
+    const TickType_t hold_ticks = pdMS_TO_TICKS(SELECT_HOLD_MS);
+    button_event_t evt;
     while (1) {
-
-        if (xQueueReceive(
-                button_queue,
-                &button_evt,
-                portMAX_DELAY
-            ) == pdTRUE) {
-
-            // Нас интересует только момент нажатия.
-            // События отпускания пока игнорируем.
-            if (button_evt.kind != BTN_EVENT_PRESSED) {
-                continue;
+        BaseType_t received = xQueueReceive(button_queue, &evt, pdMS_TO_TICKS(20));
+        TickType_t now = xTaskGetTickCount();
+        if (received == pdTRUE) {
+            if (evt.button == BTN_SELECT) {
+                if (evt.kind == BTN_EVENT_PRESSED) {
+                    select_down = true;
+                    hold_sent = false;
+                    select_started = now;
+                } else if (evt.kind == BTN_EVENT_RELEASED && select_down) {
+                    if (!hold_sent) {
+                        ui_send_event((TickType_t)(now - select_started) >= hold_ticks
+                                      ? UI_EVT_CONTEXT : UI_EVT_SELECT);
+                    }
+                    select_down = false;
+                }
+            } else if (evt.kind == BTN_EVENT_PRESSED && !select_down) {
+                switch (evt.button) {
+                    case BTN_UP: ui_send_event(UI_EVT_UP); break;
+                    case BTN_DOWN: ui_send_event(UI_EVT_DOWN); break;
+                    case BTN_LEFT: ui_send_event(UI_EVT_LEFT); break;
+                    case BTN_RIGHT: ui_send_event(UI_EVT_RIGHT); break;
+                    default: break;
+                }
             }
-
-            switch (button_evt.button) {
-
-                case BTN_UP:
-                    ui_send_event(UI_EVT_UP);
-                    break;
-
-                case BTN_DOWN:
-                    ui_send_event(UI_EVT_DOWN);
-                    break;
-
-                case BTN_LEFT:
-                    ui_send_event(UI_EVT_LEFT);
-                    break;
-
-                case BTN_RIGHT:
-                    ui_send_event(UI_EVT_RIGHT);
-                    break;
-
-                case BTN_SELECT:
-                    ui_send_event(UI_EVT_SELECT);
-                    break;
-
-                default:
-                    break;
-            }
+        }
+        if (select_down && !hold_sent &&
+            (TickType_t)(now - select_started) >= hold_ticks) {
+            ui_send_event(UI_EVT_CONTEXT);
+            hold_sent = true;
         }
     }
 }
