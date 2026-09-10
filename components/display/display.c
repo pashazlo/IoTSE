@@ -96,7 +96,10 @@ esp_lcd_panel_dev_config_t panel_config = {
     ESP_LOGI(TAG, "ST7789 panel driver created");
 
     // 4. Инициализируем ST7789 (с блокировкой шины)
-    spi_bus_lock();
+    if (!spi_bus_lock(pdMS_TO_TICKS(1000))) {
+        ESP_LOGE(TAG, "Failed to acquire SPI bus for display init");
+        return ESP_ERR_TIMEOUT;
+    }
     
     ret = esp_lcd_panel_reset(s_panel_handle);
     if (ret != ESP_OK) {
@@ -162,7 +165,11 @@ esp_err_t display_draw_bitmap(int x0, int y0, int x1, int y1, const uint16_t *co
         swapped[i] = __builtin_bswap16(color_data[i]);
     }
 
-    spi_bus_lock();
+    if (!spi_bus_lock(pdMS_TO_TICKS(1000))) {
+        ESP_LOGE(TAG, "display_draw_bitmap: failed to acquire SPI bus");
+        free(swapped);
+        return ESP_ERR_TIMEOUT;
+    }
     esp_err_t err = esp_lcd_panel_draw_bitmap(s_panel_handle, x0, y0, x1, y1, swapped);
     spi_bus_unlock();
 
