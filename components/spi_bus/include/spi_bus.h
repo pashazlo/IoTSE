@@ -53,7 +53,7 @@ esp_err_t spi_bus_shared_init(void);
  *   display_flush(...);
  *   spi_bus_unlock();
  */
-void spi_bus_lock(void);
+bool spi_bus_lock(TickType_t timeout);
 
 /**
  * @brief Release exclusive logical access to the shared SPI bus.
