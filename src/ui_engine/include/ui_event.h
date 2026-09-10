@@ -12,6 +12,7 @@ typedef enum {
     UI_EVT_LEFT,
     UI_EVT_RIGHT,
     UI_EVT_SELECT,
+    UI_EVT_CONTEXT, // SELECT held for 700 ms; release does not emit SELECT.
 } ui_event_t;
 
 #ifdef __cplusplus
