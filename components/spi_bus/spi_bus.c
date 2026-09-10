@@ -100,7 +100,7 @@ bool spi_bus_try_lock(TickType_t timeout)
 }
 
 
-void spi_bus_lock(void)
+bool spi_bus_try_lock(TickType_t timeout)
 {
     if (!spi_bus_try_lock(pdMS_TO_TICKS(1000))) {
         /*
