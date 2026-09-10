@@ -22,7 +22,7 @@ static const char *TAG = "FM_WORKER";
 #define FM_WORKER_EVENT_QUEUE_LEN 8
 
 #define FM_WORKER_TASK_STACK      8192
-#define FM_WORKER_TASK_PRIORITY   2
+#define FM_WORKER_TASK_PRIORITY   3
 
 
 // ============================================================================
