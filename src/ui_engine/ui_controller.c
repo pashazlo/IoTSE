@@ -42,6 +42,31 @@ static char s_editor_path[FM_MAX_PATH_LEN];
 #define FM_BROWSER_SYNTH_COUNT        2
 
 
+/* После изменения кэша индекс может исчезнуть или относиться к другому имени. */
+static void browser_clamp_focus(void)
+{
+    uint8_t count = fm_get_cached_count();
+    uint8_t selected = ui_focus_get(UI_FOCUS_FILE_BROWSER);
+    uint8_t total = count + FM_BROWSER_SYNTH_COUNT;
+    if (count == 0) selected = FM_BROWSER_SYNTH_NEW_FOLDER;
+    else if (selected >= total) selected = total - 1;
+    ui_focus_set(UI_FOCUS_FILE_BROWSER, selected);
+}
+
+/* fm.c сортирует кэш после rename/create: ищем объект по полному имени. */
+static void browser_select_name(const char *name)
+{
+    uint8_t count = fm_get_cached_count();
+    for (uint8_t i = 0; i < count; i++) {
+        const fm_entry_t *entry = fm_get_cached_entry(i);
+        if (entry && strcmp(entry->name, name) == 0) {
+            ui_focus_set(UI_FOCUS_FILE_BROWSER, i + FM_BROWSER_SYNTH_COUNT);
+            return;
+        }
+    }
+    browser_clamp_focus();
+}
+
 // ============================================================================
 // Разбор результата клавиатуры — вызывается ровно один раз, сразу
 // после того как ui_keyboard_is_open() стала false.
@@ -61,13 +86,13 @@ static void handle_keyboard_result(void)
 
         case KB_PURPOSE_NEW_FOLDER:
             if (text[0] != '\0') {
-                fm_create_dir(text);
+                if (fm_create_dir(text) == ESP_OK) browser_select_name(text);
             }
             break;
 
         case KB_PURPOSE_NEW_FILE:
             if (text[0] != '\0') {
-                fm_create_file(text);
+                if (fm_create_file(text) == ESP_OK) browser_select_name(text);
             }
             break;
 
@@ -77,6 +102,8 @@ static void handle_keyboard_result(void)
                 if (err != ESP_OK) {
                     ESP_LOGE("UI", "Rename failed: %s", esp_err_to_name(err));
                     ui_popup_show_error("Rename failed");
+                } else {
+                    browser_select_name(text);
                 }
             }
             break;
@@ -91,9 +118,6 @@ static void handle_keyboard_result(void)
 
     s_kb_purpose = KB_PURPOSE_NONE;
 
-    if (ui_screen_get() == UI_SCREEN_FILE_BROWSER) {
-        ui_focus_reset(UI_FOCUS_FILE_BROWSER);
-    }
 }
 
 
@@ -270,7 +294,9 @@ void ui_controller_handle_event(
         } else if (result == UI_POPUP_DELETE) {
             esp_err_t err = fm_delete_entry(s_kb_target_name, s_kb_target_is_dir);
             if (err == ESP_OK) {
-                ui_focus_reset(UI_FOCUS_FILE_BROWSER);
+                /* Прежний индекс теперь указывает на следующую запись.
+                   Если удалили последнюю — выбираем предыдущую. */
+                browser_clamp_focus();
             } else {
                 ESP_LOGE("UI", "Delete failed: %s", esp_err_to_name(err));
                 ui_popup_show_error("Delete failed");
