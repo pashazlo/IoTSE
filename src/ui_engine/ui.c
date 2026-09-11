@@ -28,3 +28,174 @@ static const char *TAG = "UI";
 // Очередь событий интерфейса.
 // Сюда input_bridge отправляет UI_EVT_UP, UI_EVT_DOWN и другие события.
 static QueueHandle_t ui_queue = NULL;
+
+
+// ============================================================================
+// UI Initialization
+// ============================================================================
+
+esp_err_t ui_init(void)
+{
+    if (ui_queue != NULL) {
+
+        ESP_LOGW(TAG, "UI already initialized");
+
+        return ESP_OK;
+    }
+
+    ui_queue = xQueueCreate(
+        UI_QUEUE_LEN,
+        sizeof(ui_event_t)
+    );
+
+    if (ui_queue == NULL) {
+
+        ESP_LOGE(TAG, "Failed to create UI queue");
+
+        return ESP_ERR_NO_MEM;
+    }
+
+    ESP_LOGI(TAG, "UI queue created");
+
+    return ESP_OK;
+}
+
+
+// ============================================================================
+// Event Sending API
+// ============================================================================
+
+BaseType_t ui_send_event(ui_event_t evt)
+{
+    if (ui_queue == NULL) {
+        return pdFAIL;
+    }
+
+    return xQueueSend(
+        ui_queue,
+        &evt,
+        0
+    );
+}
+
+
+BaseType_t ui_send_event_from_isr(
+    ui_event_t evt,
+    BaseType_t *hp_task_woken
+)
+{
+    if (ui_queue == NULL) {
+        return pdFAIL;
+    }
+
+    return xQueueSendFromISR(
+        ui_queue,
+        &evt,
+        hp_task_woken
+    );
+}
+
+
+// ============================================================================
+// UI Task
+// ============================================================================
+
+void ui_task(void *arg)
+{
+    (void)arg;
+
+    gfx_canvas_t canvas;
+
+
+    // ------------------------------------------------------------------------
+    // Инициализация canvas
+    // ------------------------------------------------------------------------
+
+    if (gfx_canvas_init(
+            &canvas,
+            DISPLAY_WIDTH,
+            DISPLAY_HEIGHT
+        ) != ESP_OK) {
+
+        ESP_LOGE(TAG, "Failed to allocate canvas");
+
+        vTaskDelete(NULL);
+
+        return;
+    }
+
+
+    // ------------------------------------------------------------------------
+    // Splash Screen
+    // ------------------------------------------------------------------------
+
+    ui_screen_set(UI_SCREEN_SPLASH);
+
+    ui_render(&canvas);
+
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
+
+    // ------------------------------------------------------------------------
+    // Main Menu
+    // ------------------------------------------------------------------------
+
+    ui_screen_set(UI_SCREEN_MAIN_MENU);
+
+    ui_render(&canvas);
+
+
+    // ------------------------------------------------------------------------
+    // Main Event Loop
+    // ------------------------------------------------------------------------
+
+    ui_event_t evt;
+
+    while (1) {
+
+        // Пока движется рамка или активно длинное имя — тикаем
+        // часто (~30 раз в секунду), чтобы анимация была плавной.
+        // В состоянии покоя возвращаемся к редкому тику раз в секунду
+        // (нужен только для часов на главном экране) — так дисплей
+        // не перерисовывается зря и не тратится энергия батареи.
+        TickType_t wait_ticks = ui_render_needs_tick()
+            ? pdMS_TO_TICKS(33)
+            : pdMS_TO_TICKS(1000);
+
+        BaseType_t event_received;
+
+        event_received = xQueueReceive(
+            ui_queue,
+            &evt,
+            wait_ticks
+        );
+
+
+        // Если пришло событие кнопки
+        if (event_received == pdTRUE) {
+
+            ui_controller_handle_event(
+                evt,
+                &canvas
+            );
+        }
+
+
+        // Перерисовываем в двух случаях:
+        // 1) главное меню — нужно для часов (раз в секунду);
+        // 2) рамка или длинное имя требуют кадров — рисуем следующий
+        //    кадр его движения, даже если событие не приходило.
+        if (ui_screen_get() == UI_SCREEN_MAIN_MENU ||
+            ui_render_needs_tick()) {
+
+            ui_render(&canvas);
+        }
+    }
+
+
+    // Теоретически сюда выполнение никогда не дойдёт.
+
+    gfx_canvas_deinit(&canvas);
+
+    vTaskDelete(NULL);
+}
