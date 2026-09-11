@@ -252,67 +252,100 @@ static void draw_file_volumes_screen(gfx_canvas_t *canvas)
 // Файловый менеджер — браузер файлов текущей директории
 // ============================================================================
 
+/* Верхний ВИДИМЫЙ индекс, а не выбранный пункт. Сохраняется между кадрами. */
+static uint8_t s_browser_top = 0;
+static char s_browser_path[FM_MAX_PATH_LEN];
+
+/* Копия только для экрана. Исходное имя в fm.c никогда не изменяется.
+   Текущий шрифт имеет шаг 16 px: 18 символов = 288 px. */
+#define BROWSER_LABEL_CHARS 18
+static void browser_make_label(char *out, const char *name, bool is_dir)
+{
+    size_t len = strlen(name);
+    if (len + (is_dir ? 1 : 0) <= BROWSER_LABEL_CHARS) {
+        memcpy(out, name, len);
+        if (is_dir) out[len++] = '/';
+        out[len] = '\0';
+    } else {
+        size_t prefix = BROWSER_LABEL_CHARS - (is_dir ? 4 : 3);
+        memcpy(out, name, prefix);
+        strcpy(out + prefix, is_dir ? ".../" : "...");
+    }
+}
+
 static void draw_file_browser_screen(gfx_canvas_t *canvas)
 {
+    const int16_t start_y = 32; /* Базовая линия первой строки текста. */
+    const int16_t line_h = 18;
+    /* Оставляем место под нижний край рамки. Для 320x170 получаем 8 строк. */
+    uint8_t visible = (DISPLAY_HEIGHT - start_y - UI_TEXT_DESCENT -
+                       UI_CURSOR_PAD - 1) / line_h + 1;
+    if (visible == 0) visible = 1;
+    uint8_t real_count = fm_get_cached_count();
+    uint8_t total = real_count + 2; /* New Folder и New File тоже прокручиваются. */
+    uint8_t selected = ui_focus_get(UI_FOCUS_FILE_BROWSER);
+    if (selected >= total) {
+        selected = total - 1;
+        ui_focus_set(UI_FOCUS_FILE_BROWSER, selected);
+    }
+
+    uint8_t old_top = s_browser_top;
+    const char *path = fm_current_path();
+    bool path_changed = strcmp(s_browser_path, path) != 0;
+    if (path_changed) {
+        snprintf(s_browser_path, sizeof(s_browser_path), "%s", path);
+        s_browser_top = 0;
+    }
+    /* Двигаем окно только если выделение вышло за его границы. */
+    if (selected < s_browser_top) s_browser_top = selected;
+    else if (selected >= s_browser_top + visible)
+        s_browser_top = selected - visible + 1;
+    uint8_t max_top = total > visible ? total - visible : 0;
+    if (s_browser_top > max_top) s_browser_top = max_top;
+    if (path_changed || old_top != s_browser_top) {
+        /* При прокрутке строки меняют координаты: не тянем рамку через экран. */
+        ui_cursor_reset(&s_cursor);
+    }
+
     gfx_canvas_fill(canvas, 0x0000);
     gfx_canvas_draw_line(canvas, 0, 18, DISPLAY_WIDTH - 1, 18, 0xFFFF);
-
-    // Заголовок — текущий путь. Может быть длиннее экрана при глубокой
-    // вложенности, но это диагностическая строка, не главный контент —
-    // обрезание длинных путей оставляем на будущее по необходимости.
-    gfx_canvas_draw_str(canvas, 10, 9, fm_current_path(), UI_FONT, 0xFFFF);
-
-    uint8_t real_count = fm_get_cached_count();
-    uint8_t selected = ui_focus_get(UI_FOCUS_FILE_BROWSER);
-
-    const int16_t start_y = 32;
-    const int16_t line_h = 18;
-
-    // Синтетические пункты "создать" — всегда первыми в списке.
-    bool sel_new_folder = (selected == 0);
-    bool sel_new_file = (selected == 1);
-
-    int16_t y0 = start_y;
-    draw_focus_text(canvas, 10, y0, "[+ New Folder]", sel_new_folder);
-    if (sel_new_folder) {
-        place_cursor_on_text(canvas, 10, y0, "[+ New Folder]");
+    char title[BROWSER_LABEL_CHARS + 1];
+    size_t path_len = strlen(path);
+    if (path_len <= BROWSER_LABEL_CHARS) strcpy(title, path);
+    else {
+        strcpy(title, "...");
+        strcpy(title + 3, path + path_len - (BROWSER_LABEL_CHARS - 3));
     }
+    gfx_canvas_draw_str(canvas, 10, 12, title, UI_FONT, 0xFFFF);
 
-    int16_t y1 = start_y + line_h;
-    draw_focus_text(canvas, 10, y1, "[+ New File]", sel_new_file);
-    if (sel_new_file) {
-        place_cursor_on_text(canvas, 10, y1, "[+ New File]");
-    }
-
-    for (uint8_t i = 0; i < real_count; i++) {
-
-        const fm_entry_t *entry = fm_get_cached_entry(i);
-        if (entry == NULL) {
-            continue;
+    for (uint8_t row = 0; row < visible; row++) {
+        uint8_t index = s_browser_top + row; /* Индекс во всём списке. */
+        if (index >= total) break;
+        char label[BROWSER_LABEL_CHARS + 1];
+        if (index == 0) strcpy(label, "[+ New Folder]");
+        else if (index == 1) strcpy(label, "[+ New File]");
+        else {
+            const fm_entry_t *entry = fm_get_cached_entry(index - 2);
+            if (!entry) continue;
+            browser_make_label(label, entry->name, entry->is_dir);
         }
-
-        int16_t y = start_y + ((i + 2) * line_h);
-        bool focused = (selected == i + 2);
-
-        // Папки помечаем "/" в конце имени — простое, но однозначное
-        // визуальное отличие без отдельной иконки.
-        char label[FM_MAX_NAME_LEN + 2];
-        if (entry->is_dir) {
-            snprintf(label, sizeof(label), "%s/", entry->name);
-        } else {
-            strncpy(label, entry->name, sizeof(label) - 1);
-            label[sizeof(label) - 1] = '\0';
-        }
-
+        int16_t y = start_y + row * line_h; /* Координата видимой строки. */
+        bool focused = index == selected;
         draw_focus_text(canvas, 10, y, label, focused);
-
-        if (focused) {
-            place_cursor_on_text(canvas, 10, y, label);
-        }
+        if (focused) place_cursor_on_text(canvas, 10, y, label);
     }
-
-    if (real_count == 0) {
+    if (real_count == 0)
         gfx_canvas_draw_str(canvas, 10, start_y + 2 * line_h, "(empty)", UI_FONT, 0x8410);
+
+    if (total > visible) {
+        const int16_t track_y = 23;
+        const int16_t track_h = DISPLAY_HEIGHT - track_y - 7;
+        int16_t thumb_h = (int32_t)track_h * visible / total;
+        if (thumb_h < 6) thumb_h = 6;
+        int16_t thumb_y = track_y + (int32_t)(track_h - thumb_h) *
+                         s_browser_top / max_top;
+        gfx_canvas_fill_rect(canvas, DISPLAY_WIDTH - 6, track_y, 3, track_h, 0x2104);
+        gfx_canvas_fill_rect(canvas, DISPLAY_WIDTH - 6, thumb_y, 3, thumb_h, 0xBDF7);
     }
 }
 
