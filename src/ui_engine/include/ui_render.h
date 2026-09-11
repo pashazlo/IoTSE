@@ -17,6 +17,11 @@ void ui_render(gfx_canvas_t *canvas);
  */
 bool ui_render_cursor_is_animating(void);
 
+/* Нужен ли следующий кадр без нажатий: рамка или длинное имя браузера.
+ * При открытой клавиатуре имя не анимируется; popup управляет своим курсором.
+ */
+bool ui_render_needs_tick(void);
+
 #ifdef __cplusplus
 }
 #endif
