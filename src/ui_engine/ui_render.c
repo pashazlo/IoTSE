@@ -19,6 +19,8 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #define UI_FONT (&Px437_IBM_VGA_8x14_2x8pt7b)
 
@@ -30,6 +32,16 @@
 // Курсор один на весь UI (а не по одному на каждое меню) — он просто
 // "переезжает" между объектами, где бы они ни находились.
 static ui_cursor_t s_cursor;
+
+/* Состояние горизонтальной прокрутки одного выделенного имени. */
+static struct {
+    char text[FM_MAX_NAME_LEN + 2];
+    uint8_t selected;
+    bool active, paused;
+    TickType_t last_tick;
+    uint32_t elapsed_ms;
+    int16_t offset_px;
+} s_name_scroll;
 
 // Отступ рамки-курсора от текста и приблизительные метрики шрифта
 // Px437_IBM_VGA_8x14 (высота глифа ~14px: ~11px над базовой линией,
@@ -46,6 +58,16 @@ bool ui_render_cursor_is_animating(void)
     return s_cursor.animating;
 }
 
+
+/* ui.c использует этот запрос для кадров без новых нажатий кнопок.
+   Popup и клавиатура получают приоритет над анимацией фонового имени. */
+bool ui_render_needs_tick(void)
+{
+    if (ui_popup_is_open()) return ui_popup_is_animating();
+    if (ui_keyboard_is_open()) return false;
+    return ui_render_cursor_is_animating() ||
+           (ui_screen_get() == UI_SCREEN_FILE_BROWSER && s_name_scroll.active);
+}
 
 // Подвинуть курсор к рамке вокруг текста (text_x/text_y — те же
 // координаты, что были переданы в gfx_canvas_draw_str), сделать шаг
@@ -273,6 +295,75 @@ static void browser_make_label(char *out, const char *name, bool is_dir)
     }
 }
 
+#define NAME_VIEW_WIDTH       (BROWSER_LABEL_CHARS * 16)
+#define NAME_START_PAUSE_MS   1000U
+#define NAME_END_PAUSE_MS     1200U
+#define NAME_MS_PER_PIXEL       25U /* 40 пикселей в секунду. */
+
+static void browser_update_name_scroll(uint8_t selected, bool path_changed)
+{
+    char text[FM_MAX_NAME_LEN + 2] = "";
+    const fm_entry_t *entry = selected >= 2 ? fm_get_cached_entry(selected - 2) : NULL;
+    if (entry) snprintf(text, sizeof(text), "%s%s", entry->name, entry->is_dir ? "/" : "");
+    TickType_t now = xTaskGetTickCount();
+    bool paused = ui_popup_is_open() || ui_keyboard_is_open();
+    bool changed = path_changed || selected != s_name_scroll.selected ||
+                   strcmp(text, s_name_scroll.text) != 0;
+    if (changed) {
+        snprintf(s_name_scroll.text, sizeof(s_name_scroll.text), "%s", text);
+        s_name_scroll.selected = selected;
+        s_name_scroll.elapsed_ms = 0;
+        s_name_scroll.offset_px = 0;
+    }
+    int16_t distance = gfx_canvas_measure_text_width(UI_FONT, text) - NAME_VIEW_WIDTH;
+    s_name_scroll.active = entry && distance > 0;
+    if (s_name_scroll.active) {
+        uint32_t move_ms = (uint32_t)distance * NAME_MS_PER_PIXEL;
+        uint32_t cycle_ms = NAME_START_PAUSE_MS + move_ms + NAME_END_PAUSE_MS;
+        if (!changed && !paused && !s_name_scroll.paused) {
+            /* Вычитание тиков корректно и при переполнении счётчика. */
+            uint64_t delta_ms = (uint64_t)(TickType_t)(now - s_name_scroll.last_tick) *
+                                1000U / configTICK_RATE_HZ;
+            s_name_scroll.elapsed_ms = (s_name_scroll.elapsed_ms + delta_ms) % cycle_ms;
+        }
+        uint32_t t = s_name_scroll.elapsed_ms;
+        if (t <= NAME_START_PAUSE_MS) s_name_scroll.offset_px = 0;
+        else if (t >= NAME_START_PAUSE_MS + move_ms) s_name_scroll.offset_px = distance;
+        else s_name_scroll.offset_px = (t - NAME_START_PAUSE_MS) / NAME_MS_PER_PIXEL;
+    } else {
+        s_name_scroll.elapsed_ms = 0;
+        s_name_scroll.offset_px = 0;
+    }
+    s_name_scroll.paused = paused;
+    s_name_scroll.last_tick = now;
+}
+
+/* Рисуем глифы того же шрифта через draw_pixel, но только внутри окна имени.
+   Обычный draw_str клиппирует по экрану: сдвинутое имя иначе затронуло бы
+   левое поле и полосу прокрутки. Буфер DMA и драйвер графики не меняем. */
+static void browser_draw_scrolling_name(gfx_canvas_t *canvas, int16_t baseline)
+{
+    int16_t pen_x = 10 - s_name_scroll.offset_px;
+    const unsigned char *text = (const unsigned char *)s_name_scroll.text;
+    for (; *text; text++) {
+        if (*text < UI_FONT->first || *text > UI_FONT->last) continue;
+        const gfx_glyph_t *g = &UI_FONT->glyphs[*text - UI_FONT->first];
+        for (int yy = 0; yy < g->height; yy++) {
+            int16_t y = baseline + g->yOffset + yy;
+            for (int xx = 0; xx < g->width; xx++) {
+                int16_t x = pen_x + g->xOffset + xx;
+                if (x < 10 || x >= 10 + NAME_VIEW_WIDTH ||
+                    y < baseline - UI_TEXT_ASCENT || y > baseline + UI_TEXT_DESCENT) continue;
+                size_t bit = (size_t)yy * g->width + xx;
+                if (UI_FONT->bitmap[g->bitmapOffset + bit / 8] & (0x80U >> (bit % 8)))
+                    gfx_canvas_draw_pixel(canvas, x, y, 0xFFFF);
+            }
+        }
+        pen_x += g->xAdvance;
+        if (pen_x >= 10 + NAME_VIEW_WIDTH) break;
+    }
+}
+
 static void draw_file_browser_screen(gfx_canvas_t *canvas)
 {
     const int16_t start_y = 32; /* Базовая линия первой строки текста. */
@@ -307,6 +398,7 @@ static void draw_file_browser_screen(gfx_canvas_t *canvas)
         ui_cursor_reset(&s_cursor);
     }
 
+    browser_update_name_scroll(selected, path_changed);
     gfx_canvas_fill(canvas, 0x0000);
     gfx_canvas_draw_line(canvas, 0, 18, DISPLAY_WIDTH - 1, 18, 0xFFFF);
     char title[BROWSER_LABEL_CHARS + 1];
@@ -331,7 +423,13 @@ static void draw_file_browser_screen(gfx_canvas_t *canvas)
         }
         int16_t y = start_y + row * line_h; /* Координата видимой строки. */
         bool focused = index == selected;
-        draw_focus_text(canvas, 10, y, label, focused);
+        if (focused && s_name_scroll.active) {
+            browser_draw_scrolling_name(canvas, y);
+        } else {
+            draw_focus_text(canvas, 10, y, label, focused);
+        }
+        /* Обрезанная label задаёт постоянную ширину рамки (288 px).
+           Рамка стоит на месте, внутри неё движется только полное имя. */
         if (focused) place_cursor_on_text(canvas, 10, y, label);
     }
     if (real_count == 0)
@@ -410,6 +508,7 @@ void ui_render(gfx_canvas_t *canvas)
 
     if (s_first_call || screen != s_prev_screen) {
         ui_cursor_reset(&s_cursor);
+        memset(&s_name_scroll, 0, sizeof(s_name_scroll));
         s_prev_screen = screen;
         s_first_call = false;
     }
@@ -451,3 +550,4 @@ void ui_render(gfx_canvas_t *canvas)
 
     gfx_canvas_flush(canvas);
 }
+
