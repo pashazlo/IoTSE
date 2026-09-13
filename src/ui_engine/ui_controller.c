@@ -360,16 +360,20 @@ void ui_controller_handle_event(
             break;
     }
 
-    const ui_menu_screen_t *menu = ui_menu_get_screen(screen);
+       const ui_menu_screen_t *menu = ui_menu_get_screen(screen);
 
     if (menu == NULL) {
         return;
     }
 
-    
-    void ui_controller_poll_worker(gfx_canvas_t *canvas)
+    handle_menu_event(evt, canvas, menu);
+} // Здесь заканчивается ui_controller_handle_event().
+
+
+// Отдельная функция — уже вне предыдущей.
+void ui_controller_poll_worker(gfx_canvas_t *canvas)
 {
-    (void)canvas; // Позже понадобится для обновления экрана.
+    (void)canvas;
 
     fm_worker_event_t event;
 
@@ -382,7 +386,4 @@ void ui_controller_handle_event(
             );
         }
     }
-}
-
-    handle_menu_event(evt, canvas, menu);
 }
