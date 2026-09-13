@@ -366,5 +366,23 @@ void ui_controller_handle_event(
         return;
     }
 
+    
+    void ui_controller_poll_worker(gfx_canvas_t *canvas)
+{
+    (void)canvas; // Позже понадобится для обновления экрана.
+
+    fm_worker_event_t event;
+
+    while (fm_worker_receive_event(&event)) {
+        if (event.type == FM_EVT_ERROR) {
+            ESP_LOGE(
+                "UI",
+                "FM worker error: %s",
+                esp_err_to_name(event.error)
+            );
+        }
+    }
+}
+
     handle_menu_event(evt, canvas, menu);
 }
