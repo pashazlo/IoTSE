@@ -7,3 +7,7 @@ void ui_controller_handle_event(
     ui_event_t evt,
     gfx_canvas_t *canvas
 );
+void ui_controller_poll_worker(
+gfx_canvas_t *canvas
+
+);
