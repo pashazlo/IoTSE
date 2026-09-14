@@ -41,7 +41,8 @@ static TaskHandle_t s_worker_task = NULL;
 
 static void send_event(
     fm_worker_event_type_t type,
-    esp_err_t error
+    esp_err_t error,
+    fm_worker_cmd_type_t command
 )
 {
     if (s_event_queue == NULL) {
@@ -51,6 +52,7 @@ static void send_event(
     fm_worker_event_t event = {
         .type = type,
         .error = error,
+        .command = command,
     };
 
     /*
@@ -273,7 +275,8 @@ static void process_command(const fm_worker_cmd_t *cmd)
 
         send_event(
             FM_EVT_OK,
-            ESP_OK
+            ESP_OK,
+            cmd->type
         );
 
         /*
@@ -299,7 +302,8 @@ static void process_command(const fm_worker_cmd_t *cmd)
 
                 send_event(
                     FM_EVT_CACHE_UPDATED,
-                    ESP_OK
+                    ESP_OK,
+                    cmd->type
                 );
 
                 break;
@@ -319,7 +323,8 @@ static void process_command(const fm_worker_cmd_t *cmd)
 
         send_event(
             FM_EVT_ERROR,
-            err
+            err,
+            cmd->type
         );
     }
 }
