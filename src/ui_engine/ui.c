@@ -152,6 +152,8 @@ void ui_task(void *arg)
     ui_event_t evt;
 
     while (1) {
+        ui_controller_poll_worker(&canvas);
+
 
         // Пока движется рамка или активно длинное имя — тикаем
         // часто (~30 раз в секунду), чтобы анимация была плавной.
@@ -199,3 +201,4 @@ void ui_task(void *arg)
 
     vTaskDelete(NULL);
 }
+
