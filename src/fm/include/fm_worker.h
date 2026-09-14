@@ -111,6 +111,9 @@ typedef struct {
 
     esp_err_t error;
 
+    // Какая команда породила этот ответ.
+    fm_worker_cmd_type_t command;
+
 } fm_worker_event_t;
 
 
