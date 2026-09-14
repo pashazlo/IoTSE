@@ -11,6 +11,7 @@
 #include "ui_file_editor.h"
 
 #include "fm.h"
+#include "fm_worker.h"
 #include "fm_text_edit.h"
 #include "esp_log.h"
 
@@ -360,30 +361,28 @@ void ui_controller_handle_event(
             break;
     }
 
-       const ui_menu_screen_t *menu = ui_menu_get_screen(screen);
+    const ui_menu_screen_t *menu = ui_menu_get_screen(screen);
 
     if (menu == NULL) {
         return;
     }
 
     handle_menu_event(evt, canvas, menu);
-} // Здесь заканчивается ui_controller_handle_event().
+}
 
-
-// Отдельная функция — уже вне предыдущей.
+// Отдельная функция на уровне файла, не внутри handle_event().
+// На подготовительном этапе ответы только извлекаются и логируются.
 void ui_controller_poll_worker(gfx_canvas_t *canvas)
 {
     (void)canvas;
-
     fm_worker_event_t event;
-
     while (fm_worker_receive_event(&event)) {
         if (event.type == FM_EVT_ERROR) {
-            ESP_LOGE(
-                "UI",
-                "FM worker error: %s",
-                esp_err_to_name(event.error)
-            );
+            ESP_LOGE("UI", "FM worker command=%d error=%s",
+                     (int)event.command, esp_err_to_name(event.error));
+        } else {
+            ESP_LOGI("UI", "FM worker command=%d event=%d",
+                     (int)event.command, (int)event.type);
         }
     }
 }
