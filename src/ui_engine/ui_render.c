@@ -8,6 +8,7 @@
 #include "ui_logo.h"
 #include "ui_keyboard.h"
 #include "ui_popup.h"
+#include "ui_file_editor.h"
 #include <string.h>
 
 #include "fm.h"
@@ -32,6 +33,29 @@
 // Курсор один на весь UI (а не по одному на каждое меню) — он просто
 // "переезжает" между объектами, где бы они ни находились.
 static ui_cursor_t s_cursor;
+static const char *s_worker_status;
+
+void ui_render_set_worker_status(const char *status)
+{
+    s_worker_status = status;
+}
+
+static void draw_worker_status(gfx_canvas_t *canvas)
+{
+    const char *status = s_worker_status;
+    if (status == NULL) {
+        return;
+    }
+
+    int16_t width = gfx_canvas_measure_text_width(UI_FONT, status);
+    int16_t box_width = width + 24;
+    int16_t box_x = (DISPLAY_WIDTH - box_width) / 2;
+    int16_t box_y = DISPLAY_HEIGHT - 27;
+    gfx_canvas_fill_rect(canvas, box_x + 4, box_y + 4, box_width, 22, 0x0000);
+    gfx_canvas_fill_rect(canvas, box_x, box_y, box_width, 22, 0x1082);
+    gfx_canvas_draw_rect(canvas, box_x, box_y, box_width, 22, 0x8410);
+    gfx_canvas_draw_str(canvas, box_x + 12, box_y + 16, status, UI_FONT, 0xFFFF);
+}
 
 /* Состояние горизонтальной прокрутки одного выделенного имени. */
 static struct {
@@ -65,6 +89,9 @@ bool ui_render_needs_tick(void)
 {
     if (ui_popup_is_open()) return ui_popup_is_animating();
     if (ui_keyboard_is_open()) return false;
+    if (ui_screen_get() == UI_SCREEN_FILE_EDITOR) {
+        return ui_file_editor_needs_tick();
+    }
     return ui_render_cursor_is_animating() ||
            (ui_screen_get() == UI_SCREEN_FILE_BROWSER && s_name_scroll.active);
 }
@@ -267,6 +294,8 @@ static void draw_file_volumes_screen(gfx_canvas_t *canvas)
             place_cursor_on_text(canvas, 10, y, vol->label);
         }
     }
+
+    draw_worker_status(canvas);
 }
 
 
@@ -300,10 +329,17 @@ static void browser_make_label(char *out, const char *name, bool is_dir)
 #define NAME_END_PAUSE_MS     1200U
 #define NAME_MS_PER_PIXEL       25U /* 40 пикселей в секунду. */
 
-static void browser_update_name_scroll(uint8_t selected, bool path_changed)
+static void browser_update_name_scroll(
+    const fm_cache_snapshot_t *snapshot,
+    uint8_t selected,
+    bool path_changed
+)
 {
     char text[FM_MAX_NAME_LEN + 2] = "";
-    const fm_entry_t *entry = selected >= 2 ? fm_get_cached_entry(selected - 2) : NULL;
+    const fm_entry_t *entry = selected >= 2 &&
+        selected - 2 < snapshot->count
+        ? &snapshot->entries[selected - 2]
+        : NULL;
     if (entry) snprintf(text, sizeof(text), "%s%s", entry->name, entry->is_dir ? "/" : "");
     TickType_t now = xTaskGetTickCount();
     bool paused = ui_popup_is_open() || ui_keyboard_is_open();
@@ -366,13 +402,15 @@ static void browser_draw_scrolling_name(gfx_canvas_t *canvas, int16_t baseline)
 
 static void draw_file_browser_screen(gfx_canvas_t *canvas)
 {
+    fm_cache_snapshot_t snapshot;
+    fm_get_cache_snapshot(&snapshot);
     const int16_t start_y = 32; /* Базовая линия первой строки текста. */
     const int16_t line_h = 18;
     /* Оставляем место под нижний край рамки. Для 320x170 получаем 8 строк. */
     uint8_t visible = (DISPLAY_HEIGHT - start_y - UI_TEXT_DESCENT -
                        UI_CURSOR_PAD - 1) / line_h + 1;
     if (visible == 0) visible = 1;
-    uint8_t real_count = fm_get_cached_count();
+    uint8_t real_count = snapshot.count;
     uint8_t total = real_count + 2; /* New Folder и New File тоже прокручиваются. */
     uint8_t selected = ui_focus_get(UI_FOCUS_FILE_BROWSER);
     if (selected >= total) {
@@ -381,7 +419,7 @@ static void draw_file_browser_screen(gfx_canvas_t *canvas)
     }
 
     uint8_t old_top = s_browser_top;
-    const char *path = fm_current_path();
+    const char *path = snapshot.path;
     bool path_changed = strcmp(s_browser_path, path) != 0;
     if (path_changed) {
         snprintf(s_browser_path, sizeof(s_browser_path), "%s", path);
@@ -398,7 +436,7 @@ static void draw_file_browser_screen(gfx_canvas_t *canvas)
         ui_cursor_reset(&s_cursor);
     }
 
-    browser_update_name_scroll(selected, path_changed);
+    browser_update_name_scroll(&snapshot, selected, path_changed);
     gfx_canvas_fill(canvas, 0x0000);
     gfx_canvas_draw_line(canvas, 0, 18, DISPLAY_WIDTH - 1, 18, 0xFFFF);
     char title[BROWSER_LABEL_CHARS + 1];
@@ -417,8 +455,7 @@ static void draw_file_browser_screen(gfx_canvas_t *canvas)
         if (index == 0) strcpy(label, "[+ New Folder]");
         else if (index == 1) strcpy(label, "[+ New File]");
         else {
-            const fm_entry_t *entry = fm_get_cached_entry(index - 2);
-            if (!entry) continue;
+            const fm_entry_t *entry = &snapshot.entries[index - 2];
             browser_make_label(label, entry->name, entry->is_dir);
         }
         int16_t y = start_y + row * line_h; /* Координата видимой строки. */
@@ -445,52 +482,14 @@ static void draw_file_browser_screen(gfx_canvas_t *canvas)
         gfx_canvas_fill_rect(canvas, DISPLAY_WIDTH - 6, track_y, 3, track_h, 0x2104);
         gfx_canvas_fill_rect(canvas, DISPLAY_WIDTH - 6, thumb_y, 3, thumb_h, 0xBDF7);
     }
+
+    draw_worker_status(canvas);
 }
 
 
 // ============================================================================
 // Файловый менеджер — построчный редактор текста
 // ============================================================================
-
-static void draw_file_editor_screen(gfx_canvas_t *canvas)
-{
-    gfx_canvas_fill(canvas, 0x0000);
-    gfx_canvas_draw_line(canvas, 0, 18, DISPLAY_WIDTH - 1, 18, 0xFFFF);
-    gfx_canvas_draw_str(canvas, 10, 9, "Editor  (LEFT=save & exit)", UI_FONT, 0xFFFF);
-
-    uint16_t count = fm_text_edit_line_count();
-    uint8_t selected = ui_focus_get(UI_FOCUS_FILE_EDITOR);
-
-    const int16_t start_y = 32;
-    const int16_t line_h = 16;
-
-    // Сколько строк вообще помещается на экран — простая постраничная
-    // прокрутка "вокруг выбранной строки", без отдельного индикатора.
-    uint8_t visible_lines = (DISPLAY_HEIGHT - start_y) / line_h;
-
-    uint16_t scroll_top = 0;
-    if (selected >= visible_lines) {
-        scroll_top = selected - visible_lines + 1;
-    }
-
-    for (uint8_t row = 0; row < visible_lines; row++) {
-
-        uint16_t idx = scroll_top + row;
-        if (idx >= count) {
-            break;
-        }
-
-        int16_t y = start_y + (row * line_h);
-        bool focused = (idx == selected);
-
-        draw_focus_text(canvas, 10, y, fm_text_edit_get_line(idx), focused);
-
-        if (focused) {
-            place_cursor_on_text(canvas, 10, y, fm_text_edit_get_line(idx));
-        }
-    }
-}
-
 
 // ============================================================================
 // Main Render
@@ -528,7 +527,7 @@ void ui_render(gfx_canvas_t *canvas)
             break;
 
         case UI_SCREEN_FILE_EDITOR:
-            draw_file_editor_screen(canvas);
+            ui_file_editor_draw(canvas);
             break;
 
         default: {

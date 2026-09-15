@@ -3,12 +3,16 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 
 
 static const char *TAG = "FM_TEXT_EDIT";
+
+#define FM_EDIT_TEMP_SUFFIX   ".iotse.tmp"
+#define FM_EDIT_BACKUP_SUFFIX ".iotse.bak"
 
 
 // ============================================================================
@@ -29,6 +33,7 @@ static char (*s_lines)[FM_EDIT_MAX_LINE_LEN] = NULL;
 static uint16_t s_line_count = 0;
 
 static char s_filepath[FM_MAX_PATH_LEN];
+static bool s_has_trailing_newline = false;
 
 
 // ============================================================================
@@ -103,6 +108,7 @@ void fm_text_edit_init(void)
     s_lines[0][0] = '\0';
 
     s_filepath[0] = '\0';
+    s_has_trailing_newline = false;
 
 
     ESP_LOGI(
@@ -137,6 +143,7 @@ void fm_text_edit_clear(void)
 
 
     s_line_count = 1;
+    s_has_trailing_newline = false;
 
     s_filepath[0] = '\0';
 }
@@ -313,6 +320,127 @@ bool fm_text_edit_insert_line_after(uint16_t line_index)
     return true;
 }
 
+static bool make_companion_path(
+    const char *filepath,
+    const char *suffix,
+    char *out,
+    size_t out_size
+)
+{
+    size_t path_len = strnlen(filepath, FM_MAX_PATH_LEN);
+    size_t suffix_len = strlen(suffix);
+    if (path_len == FM_MAX_PATH_LEN || path_len + suffix_len >= out_size) {
+        return false;
+    }
+    memcpy(out, filepath, path_len);
+    memcpy(out + path_len, suffix, suffix_len + 1);
+    return true;
+}
+
+static bool preserve_artifact(
+    const char *artifact_path,
+    const char *filepath,
+    const char *preserved_suffix
+)
+{
+    char preserved_path[FM_MAX_PATH_LEN + 32];
+    if (!make_companion_path(filepath, preserved_suffix,
+                             preserved_path, sizeof(preserved_path))) {
+        ESP_LOGE(TAG, "Cannot preserve recovery artifact: %s", artifact_path);
+        return false;
+    }
+    struct stat info;
+    if (stat(preserved_path, &info) == 0) {
+        ESP_LOGE(TAG, "Preserved recovery name already exists: %s", preserved_path);
+        return false;
+    }
+    if (rename(artifact_path, preserved_path) != 0) {
+        ESP_LOGE(TAG, "Failed to preserve recovery artifact: %s", artifact_path);
+        return false;
+    }
+    ESP_LOGW(TAG, "Preserved conflicting file as: %s", preserved_path);
+    return true;
+}
+
+static bool reconcile_save_artifacts(const char *filepath)
+{
+    char temp_path[FM_MAX_PATH_LEN + sizeof(FM_EDIT_TEMP_SUFFIX)];
+    char backup_path[FM_MAX_PATH_LEN + sizeof(FM_EDIT_BACKUP_SUFFIX)];
+    if (!make_companion_path(filepath, FM_EDIT_TEMP_SUFFIX,
+                             temp_path, sizeof(temp_path)) ||
+        !make_companion_path(filepath, FM_EDIT_BACKUP_SUFFIX,
+                             backup_path, sizeof(backup_path))) {
+        ESP_LOGE(TAG, "Recovery path is too long: %s", filepath);
+        return false;
+    }
+
+    struct stat info;
+    bool target_exists = stat(filepath, &info) == 0;
+    bool backup_exists = stat(backup_path, &info) == 0;
+    bool temp_exists = stat(temp_path, &info) == 0;
+
+    if (target_exists) {
+        /* Existing suffixed files may be legitimate user data. Never delete
+           them merely because their names resemble transaction artifacts. */
+        if (temp_exists && !preserve_artifact(
+                temp_path, filepath, ".recovered-tmp")) {
+            return false;
+        }
+        if (backup_exists && !preserve_artifact(
+                backup_path, filepath, ".recovered-bak")) {
+            return false;
+        }
+        return true;
+    }
+
+    if (backup_exists) {
+        /* Prefer the last known committed document over an uncommitted temp. */
+        if (temp_exists && !preserve_artifact(
+                temp_path, filepath, ".recovered-tmp")) {
+            return false;
+        }
+        if (rename(backup_path, filepath) != 0) {
+            ESP_LOGE(TAG, "Failed to restore backup: %s", backup_path);
+            return false;
+        }
+        ESP_LOGW(TAG, "Recovered interrupted save: %s", filepath);
+        return true;
+    }
+
+    if (temp_exists) {
+        if (rename(temp_path, filepath) != 0) {
+            ESP_LOGE(TAG, "Failed to recover temporary file: %s", temp_path);
+            return false;
+        }
+        ESP_LOGW(TAG, "Recovered new file from temporary save: %s", filepath);
+    }
+    return true;
+}
+
+
+bool fm_text_edit_split_line(uint16_t line_index, uint16_t column)
+{
+    if (!editor_is_ready() || line_index >= s_line_count) {
+        return false;
+    }
+
+    size_t line_len = strnlen(s_lines[line_index], FM_EDIT_MAX_LINE_LEN);
+    if (column > line_len) {
+        column = (uint16_t)line_len;
+    }
+
+    char tail[FM_EDIT_MAX_LINE_LEN];
+    copy_line(tail, s_lines[line_index] + column);
+
+    if (!fm_text_edit_insert_line_after(line_index)) {
+        return false;
+    }
+
+    s_lines[line_index][column] = '\0';
+    copy_line(s_lines[line_index + 1], tail);
+    return true;
+}
+
 
 // ============================================================================
 // Delete line
@@ -390,11 +518,6 @@ bool fm_text_edit_insert_text(
     );
 
 
-    if (column > current_len) {
-        column = current_len;
-    }
-
-
     size_t insert_len = strlen(text);
 
 
@@ -404,8 +527,20 @@ bool fm_text_edit_insert_text(
 
 
     // Сколько реально можем вставить.
-    size_t available =
-        (FM_EDIT_MAX_LINE_LEN - 1) - current_len;
+    /* A vertical move keeps the preferred visual column.  When text is
+       inserted on a shorter line, materialize the gap as spaces so the
+       insertion really happens at the visible caret position. */
+    if (column > current_len) {
+        if (column >= FM_EDIT_MAX_LINE_LEN) {
+            return false;
+        }
+
+        memset(target + current_len, ' ', column - current_len);
+        target[column] = '\0';
+        current_len = column;
+    }
+
+    size_t available = (FM_EDIT_MAX_LINE_LEN - 1) - current_len;
 
 
     if (available == 0) {
@@ -511,6 +646,55 @@ bool fm_text_edit_backspace(
 }
 
 
+bool fm_text_edit_backspace_at(uint16_t *line, uint16_t *column)
+{
+    if (!editor_is_ready() || line == NULL || column == NULL) {
+        return false;
+    }
+
+    if (*line >= s_line_count) {
+        return false;
+    }
+
+    size_t current_len = fm_text_edit_line_length(*line);
+    if (*column > current_len) {
+        *column = (uint16_t)current_len;
+    }
+
+    if (*column > 0) {
+        if (!fm_text_edit_backspace(*line, *column)) {
+            return false;
+        }
+        (*column)--;
+        return true;
+    }
+
+    if (*line == 0) {
+        return false;
+    }
+
+    uint16_t previous_line = *line - 1;
+    size_t previous_len = fm_text_edit_line_length(previous_line);
+    if (previous_len + current_len >= FM_EDIT_MAX_LINE_LEN) {
+        return false;
+    }
+
+    memcpy(
+        s_lines[previous_line] + previous_len,
+        s_lines[*line],
+        current_len + 1
+    );
+
+    if (!fm_text_edit_delete_line(*line)) {
+        return false;
+    }
+
+    *line = previous_line;
+    *column = (uint16_t)previous_len;
+    return true;
+}
+
+
 // ============================================================================
 // Open file
 // ============================================================================
@@ -518,6 +702,10 @@ bool fm_text_edit_backspace(
 bool fm_text_edit_open(const char *filepath)
 {
     if (filepath == NULL) {
+        return false;
+    }
+
+    if (!reconcile_save_artifacts(filepath)) {
         return false;
     }
 
@@ -542,6 +730,7 @@ bool fm_text_edit_open(const char *filepath)
 
 
     s_line_count = 1;
+    s_has_trailing_newline = false;
 
 
     FILE *file = fopen(filepath, "r");
@@ -574,12 +763,14 @@ bool fm_text_edit_open(const char *filepath)
             s_lines[line][col] = '\0';
             line++;
             col = 0;
+            s_has_trailing_newline = true;
         } else {
             if (col >= FM_EDIT_MAX_LINE_LEN - 1 || ch == 0) {
                 too_large = true;
                 break;
             }
             s_lines[line][col++] = (char)ch;
+            s_has_trailing_newline = false;
         }
     }
     bool read_failed = ferror(file) != 0;
@@ -638,13 +829,28 @@ bool fm_text_edit_save(void)
 
 bool fm_text_edit_save_as(const char *filepath)
 {
-    if (!editor_is_ready() || filepath == NULL) {
+    if (!editor_is_ready() || filepath == NULL || filepath[0] == '\0') {
         return false;
     }
 
+    if (!reconcile_save_artifacts(filepath)) {
+        return false;
+    }
+
+    char temp_path[FM_MAX_PATH_LEN + sizeof(FM_EDIT_TEMP_SUFFIX)];
+    char backup_path[FM_MAX_PATH_LEN + sizeof(FM_EDIT_BACKUP_SUFFIX)];
+    if (!make_companion_path(filepath, FM_EDIT_TEMP_SUFFIX,
+                             temp_path, sizeof(temp_path)) ||
+        !make_companion_path(filepath, FM_EDIT_BACKUP_SUFFIX,
+                             backup_path, sizeof(backup_path))) {
+        ESP_LOGE(TAG, "Save path is too long");
+        return false;
+    }
+
+    (void)remove(temp_path);
 
     FILE *file = fopen(
-        filepath,
+        temp_path,
         "w"
     );
 
@@ -654,7 +860,7 @@ bool fm_text_edit_save_as(const char *filepath)
         ESP_LOGE(
             TAG,
             "Failed to open for writing: %s",
-            filepath
+            temp_path
         );
 
         return false;
@@ -668,7 +874,8 @@ bool fm_text_edit_save_as(const char *filepath)
     ) {
 
         if (fputs(s_lines[i], file) == EOF) {
-            fclose(file);
+            (void)fclose(file);
+            (void)remove(temp_path);
             return false;
         }
 
@@ -678,14 +885,60 @@ bool fm_text_edit_save_as(const char *filepath)
         if (i < s_line_count - 1) {
 
             if (fputc('\n', file) == EOF) {
-                fclose(file);
+                (void)fclose(file);
+                (void)remove(temp_path);
                 return false;
             }
         }
     }
 
+    if (s_has_trailing_newline && fputc('\n', file) == EOF) {
+        (void)fclose(file);
+        (void)remove(temp_path);
+        return false;
+    }
 
-    if (fclose(file) != 0) return false;
+    if (fflush(file) != 0 || fsync(fileno(file)) != 0) {
+        ESP_LOGE(TAG, "Failed to flush temporary save: %s", temp_path);
+        (void)fclose(file);
+        (void)remove(temp_path);
+        return false;
+    }
+
+    if (fclose(file) != 0) {
+        (void)remove(temp_path);
+        return false;
+    }
+
+    struct stat info;
+    bool target_exists = stat(filepath, &info) == 0;
+    bool backup_exists = stat(backup_path, &info) == 0;
+
+    if (target_exists) {
+        if (backup_exists) {
+            ESP_LOGE(TAG, "Backup already exists, refusing save: %s", backup_path);
+            (void)remove(temp_path);
+            return false;
+        }
+        if (rename(filepath, backup_path) != 0) {
+            ESP_LOGE(TAG, "Failed to create backup: %s", filepath);
+            (void)remove(temp_path);
+            return false;
+        }
+    }
+
+    if (rename(temp_path, filepath) != 0) {
+        ESP_LOGE(TAG, "Failed to commit saved file: %s", filepath);
+        if (target_exists && rename(backup_path, filepath) != 0) {
+            ESP_LOGE(TAG, "Failed to restore backup: %s", backup_path);
+        }
+        (void)remove(temp_path);
+        return false;
+    }
+
+    if (target_exists && remove(backup_path) != 0) {
+        ESP_LOGW(TAG, "Saved, but backup remains: %s", backup_path);
+    }
 
     if (filepath != s_filepath) {
         snprintf(s_filepath, sizeof(s_filepath), "%s", filepath);
@@ -726,6 +979,7 @@ void fm_text_edit_close(void)
     s_lines[0][0] = '\0';
 
     s_filepath[0] = '\0';
+    s_has_trailing_newline = false;
 
 
     ESP_LOGI(TAG, "Editor closed");

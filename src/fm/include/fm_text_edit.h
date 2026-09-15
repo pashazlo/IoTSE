@@ -14,7 +14,7 @@
 #define FM_EDIT_MAX_LINES        100
 
 // Максимальная длина одной строки ВКЛЮЧАЯ '\0'.
-#define FM_EDIT_MAX_LINE_LEN     64
+#define FM_EDIT_MAX_LINE_LEN     512
 
 
 // Если FM_MAX_PATH_LEN определён в fm.h,
@@ -85,6 +85,12 @@ bool fm_text_edit_insert_line_after(
     uint16_t line_index
 );
 
+/* Split a line at column; the tail becomes the following line. */
+bool fm_text_edit_split_line(
+    uint16_t line_index,
+    uint16_t column
+);
+
 bool fm_text_edit_delete_line(
     uint16_t line_index
 );
@@ -108,6 +114,13 @@ bool fm_text_edit_delete_char(
 bool fm_text_edit_backspace(
     uint16_t line,
     uint16_t column
+);
+
+/* Backspace with editor semantics. At column zero, join with the previous
+   line. On success the supplied caret position is updated. */
+bool fm_text_edit_backspace_at(
+    uint16_t *line,
+    uint16_t *column
 );
 
 

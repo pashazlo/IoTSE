@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "fm.h"
+#include "fm_text_edit.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -19,7 +20,7 @@ static const char *TAG = "FM_WORKER";
 // ============================================================================
 
 #define FM_WORKER_QUEUE_LEN       8
-#define FM_WORKER_EVENT_QUEUE_LEN 8
+#define FM_WORKER_EVENT_QUEUE_LEN 1
 
 #define FM_WORKER_TASK_STACK      8192
 #define FM_WORKER_TASK_PRIORITY   3
@@ -55,18 +56,11 @@ static void send_event(
         .command = command,
     };
 
-    /*
-     * ВАЖНО:
-     *
-     * Worker никогда не должен зависать из-за UI.
-     *
-     * Поэтому event queue тоже отправляем без ожидания.
-     *
-     * Если UI почему-то не успевает забирать события,
-     * событие просто теряется, но worker продолжает работу.
-     */
-    if (xQueueSend(s_event_queue, &event, 0) != pdTRUE) {
-        ESP_LOGW(TAG, "Event queue full, event dropped: %d", type);
+    /* UI permits only one FM command at a time. A one-slot mailbox therefore
+       holds exactly the latest terminal result and cannot strand UI in a
+       permanent pending state because an old result filled the queue. */
+    if (xQueueOverwrite(s_event_queue, &event) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to publish worker result: %d", type);
     }
 }
 
@@ -208,10 +202,6 @@ static void process_command(const fm_worker_cmd_t *cmd)
 
         // ------------------------------------------------------------
         // File open/save
-        //
-        // Пока это только задел.
-        //
-        // Реальный editor buffer мы подключим следующим этапом.
         // ------------------------------------------------------------
 
         case FM_CMD_OPEN_FILE:
@@ -222,15 +212,12 @@ static void process_command(const fm_worker_cmd_t *cmd)
                 cmd->data.file.path
             );
 
-            /*
-             * Пока ничего не делаем.
-             *
-             * Загрузка текста будет вынесена в отдельный
-             * editor/file worker path, чтобы не смешивать
-             * browser и editor.
-             */
-
-            err = ESP_OK;
+            if (fm_text_edit_open(cmd->data.file.path)) {
+                fm_refresh_cache_snapshot();
+                err = ESP_OK;
+            } else {
+                err = ESP_FAIL;
+            }
 
             break;
 
@@ -243,12 +230,12 @@ static void process_command(const fm_worker_cmd_t *cmd)
                 cmd->data.file.path
             );
 
-            /*
-             * Аналогично:
-             * реальное сохранение буфера сделаем отдельно.
-             */
-
-            err = ESP_OK;
+            if (fm_text_edit_save_as(cmd->data.file.path)) {
+                fm_refresh_cache_snapshot();
+                err = ESP_OK;
+            } else {
+                err = ESP_FAIL;
+            }
 
             break;
 
@@ -273,44 +260,14 @@ static void process_command(const fm_worker_cmd_t *cmd)
 
     if (err == ESP_OK) {
 
-        send_event(
-            FM_EVT_OK,
-            ESP_OK,
-            cmd->type
-        );
-
-        /*
-         * Текущий fm.c сам обновляет cache после операций.
-         *
-         * Поэтому пока просто сообщаем UI:
-         *
-         * "операция закончена".
-         *
-         * Позже, когда вынесем cache в отдельный модуль,
-         * именно worker будет явно вызывать fm_cache_refresh().
-         */
-
-        switch (cmd->type) {
-
-            case FM_CMD_ENTER_VOLUME:
-            case FM_CMD_ENTER_DIR:
-            case FM_CMD_GO_UP:
-            case FM_CMD_CREATE_FILE:
-            case FM_CMD_CREATE_DIR:
-            case FM_CMD_DELETE:
-            case FM_CMD_RENAME:
-
-                send_event(
-                    FM_EVT_CACHE_UPDATED,
-                    ESP_OK,
-                    cmd->type
-                );
-
-                break;
-
-            default:
-                break;
+        fm_worker_event_type_t result_type = FM_EVT_CACHE_UPDATED;
+        if (cmd->type == FM_CMD_OPEN_FILE) {
+            result_type = FM_EVT_FILE_LOADED;
+        } else if (cmd->type == FM_CMD_SAVE_FILE) {
+            result_type = FM_EVT_FILE_SAVED;
         }
+
+        send_event(result_type, ESP_OK, cmd->type);
 
     } else {
 

@@ -4,12 +4,20 @@
 #include <string.h>
 
 #define POPUP_FONT (&Px437_IBM_VGA_8x14_2x8pt7b)
-/* IDs: 0 = close cross, 1 = first action, 2 = second action. */
+typedef enum {
+    POPUP_KIND_FILE = 0,
+    POPUP_KIND_EDITOR,
+    POPUP_KIND_EDITOR_EXIT,
+    POPUP_KIND_ERROR,
+} popup_kind_t;
+
+/* ID 0 is always the close cross. */
 static bool s_open, s_confirm_delete, s_error;
 static unsigned s_focus;
 static char s_name[64];
 static char s_error_text[16];
 static bool s_is_dir;
+static popup_kind_t s_kind;
 static ui_cursor_t s_cursor;
 
 void ui_popup_open(const char *name, bool is_dir)
@@ -18,8 +26,31 @@ void ui_popup_open(const char *name, bool is_dir)
     strncpy(s_name, name, sizeof(s_name) - 1);
     s_name[sizeof(s_name) - 1] = '\0';
     s_is_dir = is_dir;
+    s_kind = POPUP_KIND_FILE;
     s_confirm_delete = s_error = false;
     s_focus = 1; /* Rename: non-destructive initial focus. */
+    s_open = true;
+    ui_cursor_reset(&s_cursor);
+}
+void ui_popup_open_editor(const char *filename)
+{
+    if (!filename) filename = "";
+    strncpy(s_name, filename, sizeof(s_name) - 1);
+    s_name[sizeof(s_name) - 1] = '\0';
+    s_kind = POPUP_KIND_EDITOR;
+    s_confirm_delete = s_error = false;
+    s_focus = 1;
+    s_open = true;
+    ui_cursor_reset(&s_cursor);
+}
+void ui_popup_open_editor_exit(const char *filename)
+{
+    if (!filename) filename = "";
+    strncpy(s_name, filename, sizeof(s_name) - 1);
+    s_name[sizeof(s_name) - 1] = '\0';
+    s_kind = POPUP_KIND_EDITOR_EXIT;
+    s_confirm_delete = s_error = false;
+    s_focus = 1; /* Save is the safe default. */
     s_open = true;
     ui_cursor_reset(&s_cursor);
 }
@@ -36,6 +67,7 @@ void ui_popup_show_error(const char *message)
     strncpy(s_error_text, message, sizeof(s_error_text) - 1);
     s_error_text[sizeof(s_error_text) - 1] = '\0';
     s_error = s_open = true;
+    s_kind = POPUP_KIND_ERROR;
     s_focus = 0;
     ui_cursor_reset(&s_cursor);
 }
@@ -50,6 +82,48 @@ ui_popup_result_t ui_popup_handle_event(ui_event_t evt)
         if (evt == UI_EVT_SELECT) {
             ui_popup_close();
             return UI_POPUP_CANCEL;
+        }
+        return UI_POPUP_NONE;
+    }
+
+    if (s_kind == POPUP_KIND_EDITOR) {
+        switch (evt) {
+        case UI_EVT_UP: s_focus = (s_focus + 4) % 5; break;
+        case UI_EVT_DOWN: s_focus = (s_focus + 1) % 5; break;
+        case UI_EVT_RIGHT: s_focus = 0; break;
+        case UI_EVT_SELECT: {
+            static const ui_popup_result_t results[] = {
+                UI_POPUP_CANCEL,
+                UI_POPUP_EDITOR_NEW_LINE,
+                UI_POPUP_EDITOR_BACKSPACE,
+                UI_POPUP_EDITOR_SAVE,
+                UI_POPUP_EDITOR_SAVE_EXIT,
+            };
+            ui_popup_result_t result = results[s_focus];
+            ui_popup_close();
+            return result;
+        }
+        default: break;
+        }
+        return UI_POPUP_NONE;
+    }
+    if (s_kind == POPUP_KIND_EDITOR_EXIT) {
+        switch (evt) {
+        case UI_EVT_UP: s_focus = (s_focus + 3) % 4; break;
+        case UI_EVT_DOWN: s_focus = (s_focus + 1) % 4; break;
+        case UI_EVT_RIGHT: s_focus = 0; break;
+        case UI_EVT_SELECT: {
+            static const ui_popup_result_t results[] = {
+                UI_POPUP_CANCEL,
+                UI_POPUP_EDITOR_EXIT_SAVE,
+                UI_POPUP_EDITOR_DISCARD,
+                UI_POPUP_CANCEL,
+            };
+            ui_popup_result_t result = results[s_focus];
+            ui_popup_close();
+            return result;
+        }
+        default: break;
         }
         return UI_POPUP_NONE;
     }
@@ -86,14 +160,107 @@ static void draw_action(gfx_canvas_t *c, int y, const char *label, unsigned id)
     gfx_canvas_draw_str(c, 60, y + 18, label, POPUP_FONT,
                         selected ? 0xFFFF : 0xBDF7);
 }
+
+static void draw_editor_popup(gfx_canvas_t *c)
+{
+    static const char *actions[] = {
+        "New line",
+        "Backspace",
+        "Save",
+        "Save & Exit",
+    };
+
+    gfx_canvas_fill_rect(c, 35, 8, 260, 157, 0x0000);
+    gfx_canvas_fill_rect(c, 30, 3, 260, 157, 0x1082);
+    gfx_canvas_draw_rect(c, 30, 3, 260, 157, 0x8410);
+    gfx_canvas_draw_str(c, 44, 23, "Editor", POPUP_FONT, 0xFFFF);
+    gfx_canvas_draw_line(c, 268, 12, 278, 22, 0xFFFF);
+    gfx_canvas_draw_line(c, 278, 12, 268, 22, 0xFFFF);
+
+    char label[15];
+    strncpy(label, s_name, sizeof(label) - 1);
+    label[sizeof(label) - 1] = '\0';
+    if (strlen(s_name) > 14) {
+        label[11] = '.';
+        label[12] = '.';
+        label[13] = '.';
+    }
+    gfx_canvas_draw_str(c, 44, 42, label, POPUP_FONT, 0xBDF7);
+
+    for (unsigned i = 0; i < 4; i++) {
+        int y = 47 + (int)i * 27;
+        bool selected = s_focus == i + 1;
+        gfx_canvas_fill_rect(c, 48, y, 224, 23, selected ? 0x2945 : 0x18C3);
+        gfx_canvas_draw_str(
+            c,
+            60,
+            y + 16,
+            actions[i],
+            POPUP_FONT,
+            selected ? 0xFFFF : 0xBDF7
+        );
+    }
+
+    if (s_focus == 0) {
+        ui_cursor_set_target(&s_cursor, 263, 7, 20, 20);
+    } else {
+        ui_cursor_set_target(
+            &s_cursor,
+            46,
+            45 + (int)(s_focus - 1) * 27,
+            227,
+            26
+        );
+    }
+    ui_cursor_step(&s_cursor);
+    ui_cursor_draw(c, &s_cursor, 0xFFFF);
+}
+
+static void draw_editor_exit_popup(gfx_canvas_t *c)
+{
+    static const char *actions[] = {"Save", "Discard", "Cancel"};
+
+    gfx_canvas_fill_rect(c, 35, 23, 260, 130, 0x0000);
+    gfx_canvas_fill_rect(c, 30, 18, 260, 130, 0x1082);
+    gfx_canvas_draw_rect(c, 30, 18, 260, 130, 0x8410);
+    gfx_canvas_draw_str(c, 44, 38, "Unsaved changes", POPUP_FONT, 0xFFFF);
+    gfx_canvas_draw_line(c, 268, 27, 278, 37, 0xFFFF);
+    gfx_canvas_draw_line(c, 278, 27, 268, 37, 0xFFFF);
+
+    for (unsigned i = 0; i < 3; i++) {
+        int y = 50 + (int)i * 30;
+        bool selected = s_focus == i + 1;
+        gfx_canvas_fill_rect(c, 48, y, 224, 25, selected ? 0x2945 : 0x18C3);
+        gfx_canvas_draw_str(c, 60, y + 17, actions[i], POPUP_FONT,
+                            selected ? 0xFFFF : 0xBDF7);
+    }
+
+    if (s_focus == 0) {
+        ui_cursor_set_target(&s_cursor, 263, 22, 20, 20);
+    } else {
+        ui_cursor_set_target(&s_cursor, 46, 48 + (int)(s_focus - 1) * 30, 227, 28);
+    }
+    ui_cursor_step(&s_cursor);
+    ui_cursor_draw(c, &s_cursor, 0xFFFF);
+}
 void ui_popup_draw(gfx_canvas_t *c)
 {
     if (!c || !s_open) return;
+    if (s_kind == POPUP_KIND_EDITOR) {
+        draw_editor_popup(c);
+        return;
+    }
+    if (s_kind == POPUP_KIND_EDITOR_EXIT) {
+        draw_editor_exit_popup(c);
+        return;
+    }
     /* Solid panel with a small shadow; underlying browser is redrawn each frame. */
     gfx_canvas_fill_rect(c, 35, 23, 260, 130, 0x0000);
     gfx_canvas_fill_rect(c, 30, 18, 260, 130, 0x1082);
     gfx_canvas_draw_rect(c, 30, 18, 260, 130, 0x8410);
-    const char *title = s_error ? "Error" : s_confirm_delete ? "Delete?" : s_is_dir ? "Folder" : "File";
+    const char *title = s_error ? "Error" :
+        s_confirm_delete ? (s_is_dir ? "Delete folder?" : "Delete?") :
+        s_is_dir ? "Folder" : "File";
     gfx_canvas_draw_str(c, 44, 38, title, POPUP_FONT, 0xFFFF);
     /* Actual cross, independent of font glyph support. */
     gfx_canvas_draw_line(c, 268, 27, 278, 37, 0xFFFF);
@@ -108,7 +275,12 @@ void ui_popup_draw(gfx_canvas_t *c)
         gfx_canvas_draw_str(c, 44, 120, "SELECT: close", POPUP_FONT, 0xBDF7);
     } else {
         draw_action(c, 69, s_confirm_delete ? "Cancel" : "Rename", 1);
-        draw_action(c, 106, "Del", 2);
+        draw_action(
+            c,
+            106,
+            s_confirm_delete && s_is_dir ? "Del contents" : "Del",
+            2
+        );
     }
     if (s_focus == 0) ui_cursor_set_target(&s_cursor, 263, 22, 20, 20);
     else ui_cursor_set_target(&s_cursor, 46, s_focus == 1 ? 67 : 104, 227, 30);

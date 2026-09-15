@@ -7,6 +7,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "esp_log.h"
 
@@ -25,6 +26,7 @@ static const char *TAG = "fm";
 //
 // Позже можно добавить другие источники.
 #define FM_MAX_VOLUMES   4
+#define FM_DELETE_MAX_DEPTH 8
 
 // Зарегистрированные тома.
 //
@@ -64,10 +66,14 @@ static char s_current_path[FM_MAX_PATH_LEN];
 //
 // UI читает именно этот массив, а не вызывает opendir()/readdir()
 // во время каждого кадра.
-static fm_entry_t s_cached_entries[FM_BROWSER_MAX_ENTRIES];
+typedef struct {
+fm_entry_t entries[FM_BROWSER_MAX_ENTRIES];
+char path[FM_MAX_PATH_LEN];
+uint8_t count;
+} fm_cache_bank_t;
 
-// Количество записей в кэше.
-static uint8_t s_cached_count = 0;
+static fm_cache_bank_t s_cache_banks[2];
+static uint8_t s_active_cache_bank = 0;
 
 // ============================================================================
 // Внутренние вспомогательные функции
@@ -168,12 +174,41 @@ static uint8_t s_cached_count = 0;
 * Используется перед созданием файлов/папок и переименованием,
 * чтобы случайно не перезаписать уже существующие данные.
   */
-  static bool path_exists(const char *path)
+static bool path_exists(const char *path)
   {
   struct stat st;
 
   return stat(path, &st) == 0;
   }
+
+static bool strip_internal_suffix(
+    const char *name,
+    const char *suffix,
+    char *out_name,
+    size_t out_size
+)
+{
+size_t name_len = strlen(name);
+size_t suffix_len = strlen(suffix);
+if (name_len <= suffix_len ||
+    strcmp(name + name_len - suffix_len, suffix) != 0) {
+    return false;
+}
+size_t base_len = name_len - suffix_len;
+if (base_len >= out_size) {
+    return false;
+}
+memcpy(out_name, name, base_len);
+out_name[base_len] = '\0';
+return true;
+}
+
+static bool has_internal_transaction_suffix(const char *name)
+{
+char unused[FM_MAX_NAME_LEN];
+return strip_internal_suffix(name, ".iotse.bak", unused, sizeof(unused)) ||
+       strip_internal_suffix(name, ".iotse.tmp", unused, sizeof(unused));
+}
 
 // ============================================================================
 // Регистрация томов
@@ -323,12 +358,49 @@ return strcasecmp(ea->name, eb->name);
 
 
    fm_entry_t *entry = &out_entries[count];
+   const char *display_name = ent->d_name;
+   char recovered_name[FM_MAX_NAME_LEN];
+   bool is_backup = strip_internal_suffix(
+       ent->d_name, ".iotse.bak", recovered_name, sizeof(recovered_name));
+   bool is_temp = !is_backup && strip_internal_suffix(
+       ent->d_name, ".iotse.tmp", recovered_name, sizeof(recovered_name));
+
+   if (is_backup || is_temp) {
+       char canonical_path[FM_MAX_PATH_LEN];
+       if (fm_build_full_path(recovered_name, canonical_path,
+                              sizeof(canonical_path)) != ESP_OK) {
+           continue;
+       }
+       bool canonical_exists = path_exists(canonical_path);
+       if (!canonical_exists && is_temp) {
+           char backup_name[FM_MAX_NAME_LEN + sizeof(".iotse.bak")];
+           static const char backup_suffix[] = ".iotse.bak";
+           size_t recovered_len = strlen(recovered_name);
+           char backup_path[FM_MAX_PATH_LEN];
+           if (recovered_len + sizeof(backup_suffix) > sizeof(backup_name)) {
+               continue;
+           }
+           memcpy(backup_name, recovered_name, recovered_len);
+           memcpy(backup_name + recovered_len, backup_suffix,
+                  sizeof(backup_suffix));
+           if (fm_build_full_path(backup_name, backup_path,
+                                  sizeof(backup_path)) != ESP_OK) {
+               continue;
+           }
+           if (path_exists(backup_path)) {
+               continue;
+           }
+       }
+       if (!canonical_exists) {
+           display_name = recovered_name;
+       }
+   }
 
 
    // Копируем имя безопасно.
    strncpy(
        entry->name,
-       ent->d_name,
+       display_name,
        FM_MAX_NAME_LEN - 1
    );
 
@@ -432,10 +504,13 @@ return strcasecmp(ea->name, eb->name);
 */
 static void refresh_cache(void)
 {
+uint8_t active = __atomic_load_n(&s_active_cache_bank, __ATOMIC_RELAXED);
+uint8_t staging_index = active ^ 1U;
+fm_cache_bank_t *staging = &s_cache_banks[staging_index];
 uint8_t count = 0;
 
 esp_err_t err = list_current_dir_uncached(
-    s_cached_entries,
+    staging->entries,
     FM_BROWSER_MAX_ENTRIES,
     &count
 );
@@ -444,7 +519,7 @@ if (err != ESP_OK) {
 
     // При ошибке не оставляем старый кэш, потому что он может
     // относиться уже к предыдущей директории.
-    s_cached_count = 0;
+    count = 0;
 
     ESP_LOGW(
         TAG,
@@ -452,10 +527,13 @@ if (err != ESP_OK) {
         esp_err_to_name(err)
     );
 
-    return;
 }
 
-s_cached_count = count;
+staging->count = count;
+strncpy(staging->path, s_current_path, sizeof(staging->path) - 1);
+staging->path[sizeof(staging->path) - 1] = '\0';
+
+__atomic_store_n(&s_active_cache_bank, staging_index, __ATOMIC_RELEASE);
 
 }
 
@@ -465,17 +543,39 @@ s_cached_count = count;
 
 uint8_t fm_get_cached_count(void)
 {
-return s_cached_count;
+fm_cache_snapshot_t snapshot;
+fm_get_cache_snapshot(&snapshot);
+return snapshot.count;
 }
 
 const fm_entry_t *fm_get_cached_entry(uint8_t index)
 {
-if (index >= s_cached_count) {
+fm_cache_snapshot_t snapshot;
+fm_get_cache_snapshot(&snapshot);
+if (index >= snapshot.count) {
 return NULL;
 }
 
-return &s_cached_entries[index];
+return &snapshot.entries[index];
 
+}
+
+void fm_get_cache_snapshot(fm_cache_snapshot_t *out_snapshot)
+{
+if (out_snapshot == NULL) {
+return;
+}
+
+uint8_t active = __atomic_load_n(&s_active_cache_bank, __ATOMIC_ACQUIRE);
+const fm_cache_bank_t *bank = &s_cache_banks[active];
+out_snapshot->entries = bank->entries;
+out_snapshot->path = bank->path;
+out_snapshot->count = bank->count;
+}
+
+void fm_refresh_cache_snapshot(void)
+{
+refresh_cache();
 }
 
 // ============================================================================
@@ -751,6 +851,152 @@ return ESP_OK;
 // Операции с файлами и папками
 // ============================================================================
 
+static esp_err_t validate_directory_tree(const char *directory, uint8_t depth)
+{
+if (directory == NULL) {
+    return ESP_ERR_INVALID_ARG;
+}
+if (depth >= FM_DELETE_MAX_DEPTH) {
+    ESP_LOGE(TAG, "Слишком глубокая вложенность для удаления: '%s'", directory);
+    return ESP_ERR_INVALID_SIZE;
+}
+
+DIR *dir = opendir(directory);
+if (dir == NULL) {
+    return ESP_FAIL;
+}
+
+esp_err_t err = ESP_OK;
+while (true) {
+    errno = 0;
+    struct dirent *entry = readdir(dir);
+    if (entry == NULL) {
+        if (errno != 0) err = ESP_FAIL;
+        break;
+    }
+    if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+        continue;
+    }
+    if (!is_valid_name(entry->d_name)) {
+        err = ESP_ERR_INVALID_ARG;
+        break;
+    }
+
+    char child_path[FM_MAX_PATH_LEN];
+    int written = snprintf(child_path, sizeof(child_path), "%s/%s",
+                           directory, entry->d_name);
+    if (written < 0 || (size_t)written >= sizeof(child_path)) {
+        err = ESP_ERR_INVALID_SIZE;
+        break;
+    }
+
+    struct stat info;
+    if (stat(child_path, &info) != 0) {
+        err = ESP_FAIL;
+        break;
+    }
+    if (S_ISDIR(info.st_mode)) {
+        err = validate_directory_tree(child_path, depth + 1);
+        if (err != ESP_OK) break;
+    }
+}
+
+if (closedir(dir) != 0 && err == ESP_OK) {
+    err = ESP_FAIL;
+}
+return err;
+}
+
+static esp_err_t delete_directory_tree(const char *directory, uint8_t depth)
+{
+if (directory == NULL) {
+    return ESP_ERR_INVALID_ARG;
+}
+
+if (depth >= FM_DELETE_MAX_DEPTH) {
+    ESP_LOGE(TAG, "Слишком глубокая вложенность при удалении: '%s'", directory);
+    return ESP_ERR_INVALID_SIZE;
+}
+
+DIR *dir = opendir(directory);
+if (dir == NULL) {
+    ESP_LOGE(TAG, "Не удалось открыть удаляемую папку: '%s'", directory);
+    return ESP_FAIL;
+}
+
+esp_err_t err = ESP_OK;
+struct dirent *entry;
+
+while (true) {
+    errno = 0;
+    entry = readdir(dir);
+    if (entry == NULL) {
+        if (errno != 0) {
+            ESP_LOGE(TAG, "Ошибка чтения удаляемой папки: '%s'", directory);
+            err = ESP_FAIL;
+        }
+        break;
+    }
+
+    if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+        continue;
+    }
+
+    if (!is_valid_name(entry->d_name)) {
+        ESP_LOGE(TAG, "Недопустимое имя внутри удаляемой папки: '%s'", entry->d_name);
+        err = ESP_ERR_INVALID_ARG;
+        break;
+    }
+
+    char child_path[FM_MAX_PATH_LEN];
+    int written = snprintf(
+        child_path,
+        sizeof(child_path),
+        "%s/%s",
+        directory,
+        entry->d_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(child_path)) {
+        err = ESP_ERR_INVALID_SIZE;
+        break;
+    }
+
+    struct stat info;
+    if (stat(child_path, &info) != 0) {
+        ESP_LOGE(TAG, "Не удалось прочитать удаляемую запись: '%s'", child_path);
+        err = ESP_FAIL;
+        break;
+    }
+
+    if (S_ISDIR(info.st_mode)) {
+        err = delete_directory_tree(child_path, depth + 1);
+    } else if (remove(child_path) != 0) {
+        ESP_LOGE(TAG, "Не удалось удалить файл: '%s'", child_path);
+        err = ESP_FAIL;
+    }
+
+    if (err != ESP_OK) {
+        break;
+    }
+}
+
+if (closedir(dir) != 0 && err == ESP_OK) {
+    ESP_LOGE(TAG, "Не удалось закрыть папку при удалении: '%s'", directory);
+    err = ESP_FAIL;
+}
+
+if (err != ESP_OK) {
+    return err;
+}
+
+if (rmdir(directory) != 0) {
+    ESP_LOGE(TAG, "Не удалось удалить очищенную папку: '%s'", directory);
+    return ESP_FAIL;
+}
+
+return ESP_OK;
+}
+
 esp_err_t fm_delete_entry(const char *name, bool is_dir)
 {
 if (!has_current_volume()) {
@@ -784,18 +1030,17 @@ if (!path_exists(full_path)) {
 }
 
 
-int result;
-
-
 if (is_dir) {
-    // rmdir удаляет только пустые директории.
-    result = rmdir(full_path);
+    err = validate_directory_tree(full_path, 0);
+    if (err == ESP_OK) {
+        err = delete_directory_tree(full_path, 0);
+    }
 } else {
-    result = remove(full_path);
+    err = remove(full_path) == 0 ? ESP_OK : ESP_FAIL;
 }
 
 
-if (result != 0) {
+if (err != ESP_OK) {
 
     ESP_LOGE(
         TAG,
@@ -804,7 +1049,7 @@ if (result != 0) {
         is_dir
     );
 
-    return ESP_FAIL;
+    return err;
 }
 
 
@@ -827,6 +1072,10 @@ if (!has_current_volume()) {
 return ESP_ERR_INVALID_STATE;
 }
 if (!is_valid_name(name)) {
+    return ESP_ERR_INVALID_ARG;
+}
+if (has_internal_transaction_suffix(name)) {
+    ESP_LOGW(TAG, "Имя зарезервировано для безопасного сохранения: '%s'", name);
     return ESP_ERR_INVALID_ARG;
 }
 
@@ -891,6 +1140,10 @@ return ESP_ERR_INVALID_STATE;
 
 
 if (!is_valid_name(name)) {
+    return ESP_ERR_INVALID_ARG;
+}
+if (has_internal_transaction_suffix(name)) {
+    ESP_LOGW(TAG, "Имя зарезервировано для безопасного сохранения: '%s'", name);
     return ESP_ERR_INVALID_ARG;
 }
 
@@ -968,6 +1221,10 @@ if (
     !is_valid_name(old_name) ||
     !is_valid_name(new_name)
 ) {
+    return ESP_ERR_INVALID_ARG;
+}
+if (has_internal_transaction_suffix(new_name)) {
+    ESP_LOGW(TAG, "Новое имя зарезервировано: '%s'", new_name);
     return ESP_ERR_INVALID_ARG;
 }
 

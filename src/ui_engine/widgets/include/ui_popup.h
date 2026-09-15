@@ -12,9 +12,17 @@ typedef enum {
     UI_POPUP_CANCEL,
     UI_POPUP_RENAME,
     UI_POPUP_DELETE,
+    UI_POPUP_EDITOR_NEW_LINE,
+    UI_POPUP_EDITOR_BACKSPACE,
+    UI_POPUP_EDITOR_SAVE,
+    UI_POPUP_EDITOR_SAVE_EXIT,
+    UI_POPUP_EDITOR_EXIT_SAVE,
+    UI_POPUP_EDITOR_DISCARD,
 } ui_popup_result_t;
 
 void ui_popup_open(const char *name, bool is_dir);
+void ui_popup_open_editor(const char *filename);
+void ui_popup_open_editor_exit(const char *filename);
 void ui_popup_close(void);
 bool ui_popup_is_open(void);
 bool ui_popup_is_animating(void);

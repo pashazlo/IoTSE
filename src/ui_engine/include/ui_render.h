@@ -9,6 +9,9 @@ extern "C" {
 
 void ui_render(gfx_canvas_t *canvas);
 
+/* NULL clears the non-modal FM operation indicator. */
+void ui_render_set_worker_status(const char *status);
+
 /**
  * @brief Возвращает true, пока курсор-рамка ещё "едет" к выбранному
  *        объекту. Используется в ui.c: пока идёт анимация, event loop

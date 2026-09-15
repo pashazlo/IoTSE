@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdbool.h>
+
 #include "ui_event.h"
 #include "gfx_canvas.h"
 
@@ -10,3 +12,5 @@ void ui_controller_handle_event(
 
 // Забрать готовые ответы worker без ожидания.
 void ui_controller_poll_worker(gfx_canvas_t *canvas);
+
+bool ui_controller_worker_pending(void);

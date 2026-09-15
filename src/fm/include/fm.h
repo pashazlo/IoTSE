@@ -118,6 +118,12 @@ uint32_t size;
 
 } fm_entry_t;
 
+typedef struct {
+const fm_entry_t *entries;
+const char *path;
+uint8_t count;
+} fm_cache_snapshot_t;
+
 // ============================================================================
 // Регистрация томов
 //
@@ -501,6 +507,11 @@ uint8_t fm_get_cached_count(void);
 Не освобождать через free().
 */
 const fm_entry_t *fm_get_cached_entry(uint8_t index);
+
+void fm_get_cache_snapshot(fm_cache_snapshot_t *out_snapshot);
+
+/* Worker-only refresh after an operation changes names or file sizes. */
+void fm_refresh_cache_snapshot(void);
 
 // ============================================================================
 // Операции с файлами и папками.

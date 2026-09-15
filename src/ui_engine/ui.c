@@ -160,9 +160,21 @@ void ui_task(void *arg)
         // В состоянии покоя возвращаемся к редкому тику раз в секунду
         // (нужен только для часов на главном экране) — так дисплей
         // не перерисовывается зря и не тратится энергия батареи.
-        TickType_t wait_ticks = ui_render_needs_tick()
-            ? pdMS_TO_TICKS(33)
-            : pdMS_TO_TICKS(1000);
+        bool needs_tick = ui_render_needs_tick();
+        TickType_t wait_ticks;
+        if (ui_controller_worker_pending()) {
+            wait_ticks = pdMS_TO_TICKS(50);
+        } else if (ui_screen_get() == UI_SCREEN_FILE_EDITOR &&
+            needs_tick &&
+            !ui_render_cursor_is_animating()) {
+            /* Only the text caret may use the economical tick. A popup
+               cursor keeps the normal 30 FPS animation cadence. */
+            wait_ticks = pdMS_TO_TICKS(250);
+        } else {
+            wait_ticks = needs_tick
+                ? pdMS_TO_TICKS(33)
+                : pdMS_TO_TICKS(1000);
+        }
 
         BaseType_t event_received;
 

@@ -25,16 +25,16 @@ typedef enum {
     KB_PURPOSE_NEW_FOLDER,
     KB_PURPOSE_NEW_FILE,
     KB_PURPOSE_RENAME,
-    KB_PURPOSE_EDIT_LINE,
 } kb_purpose_t;
 
 static kb_purpose_t s_kb_purpose = KB_PURPOSE_NONE;
 static char s_kb_target_name[FM_MAX_NAME_LEN];  // для RENAME — старое имя
 static bool s_kb_target_is_dir = false;          // для RENAME — файл или папка
-static uint16_t s_kb_target_line = 0;            // для EDIT_LINE — индекс строки
 
 // Путь к файлу, открытому в редакторе — нужен на LEFT (сохранить и выйти).
 static char s_editor_path[FM_MAX_PATH_LEN];
+static fm_worker_cmd_type_t s_pending_command = FM_CMD_NONE;
+static char s_pending_focus_name[FM_MAX_NAME_LEN];
 
 // Синтетические пункты в начале списка браузера файлов —
 // не настоящие файлы, а команды "создать новое".
@@ -42,11 +42,57 @@ static char s_editor_path[FM_MAX_PATH_LEN];
 #define FM_BROWSER_SYNTH_NEW_FILE     1
 #define FM_BROWSER_SYNTH_COUNT        2
 
+static bool worker_start(esp_err_t result, fm_worker_cmd_type_t command)
+{
+    if (result != ESP_OK) {
+        ui_popup_show_error("Worker busy");
+        return false;
+    }
+    s_pending_command = command;
+    switch (command) {
+        case FM_CMD_ENTER_VOLUME:
+        case FM_CMD_ENTER_DIR:
+        case FM_CMD_GO_UP:
+        case FM_CMD_OPEN_FILE:
+            ui_render_set_worker_status("Opening...");
+            break;
+        case FM_CMD_CREATE_FILE:
+        case FM_CMD_CREATE_DIR:
+            ui_render_set_worker_status("Creating...");
+            break;
+        case FM_CMD_RENAME:
+            ui_render_set_worker_status("Renaming...");
+            break;
+        case FM_CMD_DELETE:
+            ui_render_set_worker_status("Deleting...");
+            break;
+        default:
+            ui_render_set_worker_status("Working...");
+            break;
+    }
+    return true;
+}
+
+static bool browser_is_at_volume_root(void)
+{
+    const char *path = fm_current_path();
+    for (uint8_t i = 0; i < fm_volume_count(); i++) {
+        const fm_volume_t *volume = fm_get_volume(i);
+        if (volume != NULL && volume->mount_point != NULL &&
+            strcmp(path, volume->mount_point) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 
 /* После изменения кэша индекс может исчезнуть или относиться к другому имени. */
 static void browser_clamp_focus(void)
 {
-    uint8_t count = fm_get_cached_count();
+    fm_cache_snapshot_t snapshot;
+    fm_get_cache_snapshot(&snapshot);
+    uint8_t count = snapshot.count;
     uint8_t selected = ui_focus_get(UI_FOCUS_FILE_BROWSER);
     uint8_t total = count + FM_BROWSER_SYNTH_COUNT;
     if (count == 0) selected = FM_BROWSER_SYNTH_NEW_FOLDER;
@@ -57,9 +103,11 @@ static void browser_clamp_focus(void)
 /* fm.c сортирует кэш после rename/create: ищем объект по полному имени. */
 static void browser_select_name(const char *name)
 {
-    uint8_t count = fm_get_cached_count();
+    fm_cache_snapshot_t snapshot;
+    fm_get_cache_snapshot(&snapshot);
+    uint8_t count = snapshot.count;
     for (uint8_t i = 0; i < count; i++) {
-        const fm_entry_t *entry = fm_get_cached_entry(i);
+        const fm_entry_t *entry = &snapshot.entries[i];
         if (entry && strcmp(entry->name, name) == 0) {
             ui_focus_set(UI_FOCUS_FILE_BROWSER, i + FM_BROWSER_SYNTH_COUNT);
             return;
@@ -87,30 +135,29 @@ static void handle_keyboard_result(void)
 
         case KB_PURPOSE_NEW_FOLDER:
             if (text[0] != '\0') {
-                if (fm_create_dir(text) == ESP_OK) browser_select_name(text);
+                strncpy(s_pending_focus_name, text, sizeof(s_pending_focus_name) - 1);
+                s_pending_focus_name[sizeof(s_pending_focus_name) - 1] = '\0';
+                worker_start(fm_worker_send_create_dir(text), FM_CMD_CREATE_DIR);
             }
             break;
 
         case KB_PURPOSE_NEW_FILE:
             if (text[0] != '\0') {
-                if (fm_create_file(text) == ESP_OK) browser_select_name(text);
+                strncpy(s_pending_focus_name, text, sizeof(s_pending_focus_name) - 1);
+                s_pending_focus_name[sizeof(s_pending_focus_name) - 1] = '\0';
+                worker_start(fm_worker_send_create_file(text), FM_CMD_CREATE_FILE);
             }
             break;
 
         case KB_PURPOSE_RENAME:
             if (text[0] != '\0' && strcmp(text, s_kb_target_name) != 0) {
-                esp_err_t err = fm_rename(s_kb_target_name, text);
-                if (err != ESP_OK) {
-                    ESP_LOGE("UI", "Rename failed: %s", esp_err_to_name(err));
-                    ui_popup_show_error("Rename failed");
-                } else {
-                    browser_select_name(text);
-                }
+                strncpy(s_pending_focus_name, text, sizeof(s_pending_focus_name) - 1);
+                s_pending_focus_name[sizeof(s_pending_focus_name) - 1] = '\0';
+                worker_start(
+                    fm_worker_send_rename(s_kb_target_name, text),
+                    FM_CMD_RENAME
+                );
             }
-            break;
-
-        case KB_PURPOSE_EDIT_LINE:
-            fm_text_edit_set_line(s_kb_target_line, text);
             break;
 
         default:
@@ -128,6 +175,10 @@ static void handle_keyboard_result(void)
 
 static void handle_file_volumes_event(ui_event_t evt, gfx_canvas_t *canvas)
 {
+    if (s_pending_command != FM_CMD_NONE) {
+        return;
+    }
+
     uint8_t count = fm_volume_count();
 
     switch (evt) {
@@ -140,10 +191,7 @@ static void handle_file_volumes_event(ui_event_t evt, gfx_canvas_t *canvas)
 
         case UI_EVT_SELECT: {
             uint8_t sel = ui_focus_get(UI_FOCUS_FILE_VOLUMES);
-            if (fm_enter_volume(sel) == ESP_OK) {
-                ui_focus_reset(UI_FOCUS_FILE_BROWSER);
-                ui_screen_set(UI_SCREEN_FILE_BROWSER);
-            }
+            worker_start(fm_worker_send_enter_volume(sel), FM_CMD_ENTER_VOLUME);
             ui_render(canvas);
             break;
         }
@@ -165,7 +213,13 @@ static void handle_file_volumes_event(ui_event_t evt, gfx_canvas_t *canvas)
 
 static void handle_file_browser_event(ui_event_t evt, gfx_canvas_t *canvas)
 {
-    uint8_t real_count = fm_get_cached_count();
+    if (s_pending_command != FM_CMD_NONE) {
+        return;
+    }
+
+    fm_cache_snapshot_t snapshot;
+    fm_get_cache_snapshot(&snapshot);
+    uint8_t real_count = snapshot.count;
     uint8_t total_count = real_count + FM_BROWSER_SYNTH_COUNT;
 
     switch (evt) {
@@ -190,20 +244,24 @@ static void handle_file_browser_event(ui_event_t evt, gfx_canvas_t *canvas)
 
             } else {
 
-                const fm_entry_t *entry = fm_get_cached_entry(sel - FM_BROWSER_SYNTH_COUNT);
+                const fm_entry_t *entry =
+                    &snapshot.entries[sel - FM_BROWSER_SYNTH_COUNT];
 
                 if (entry != NULL) {
                     if (entry->is_dir) {
-                        if (fm_enter_dir(entry->name) == ESP_OK) {
-                            ui_focus_reset(UI_FOCUS_FILE_BROWSER);
-                        }
+                        worker_start(
+                            fm_worker_send_enter_dir(entry->name),
+                            FM_CMD_ENTER_DIR
+                        );
                     } else {
-                       esp_err_t path_err = fm_build_full_path(entry->name, s_editor_path, sizeof(s_editor_path));
-
-                                            if (path_err == ESP_OK && ui_file_editor_open_file(s_editor_path)) {
-                        ui_focus_reset(UI_FOCUS_FILE_EDITOR);
-
-                                                    ui_screen_set(UI_SCREEN_FILE_EDITOR);
+                        esp_err_t path_err = fm_build_full_path(
+                            entry->name,
+                            s_editor_path,
+                            sizeof(s_editor_path)
+                        );
+                        if (path_err == ESP_OK) {
+                            esp_err_t send_err = fm_worker_send_open_file(s_editor_path);
+                            worker_start(send_err, FM_CMD_OPEN_FILE);
                         }
                     }
                 }
@@ -216,7 +274,8 @@ static void handle_file_browser_event(ui_event_t evt, gfx_canvas_t *canvas)
         case UI_EVT_CONTEXT: {
             uint8_t sel = ui_focus_get(UI_FOCUS_FILE_BROWSER);
             if (sel >= FM_BROWSER_SYNTH_COUNT) {
-                const fm_entry_t *entry = fm_get_cached_entry(sel - FM_BROWSER_SYNTH_COUNT);
+                const fm_entry_t *entry =
+                    &snapshot.entries[sel - FM_BROWSER_SYNTH_COUNT];
                 if (entry) {
                     /* Snapshot target: popup navigation must not change browser focus. */
                     strncpy(s_kb_target_name, entry->name, sizeof(s_kb_target_name) - 1);
@@ -230,11 +289,10 @@ static void handle_file_browser_event(ui_event_t evt, gfx_canvas_t *canvas)
         }
 
         case UI_EVT_LEFT:
-
-            if (!fm_go_up()) {
+            if (browser_is_at_volume_root()) {
                 ui_screen_set(UI_SCREEN_FILE_VOLUMES);
             } else {
-                ui_focus_reset(UI_FOCUS_FILE_BROWSER);
+                worker_start(fm_worker_send_go_up(), FM_CMD_GO_UP);
             }
 
             ui_render(canvas);
@@ -289,19 +347,18 @@ void ui_controller_handle_event(
     /* Modal dispatch comes before every underlying screen handler. */
     if (ui_popup_is_open()) {
         ui_popup_result_t result = ui_popup_handle_event(evt);
-        if (result == UI_POPUP_RENAME) {
+        if (ui_screen_get() == UI_SCREEN_FILE_EDITOR) {
+            if (ui_file_editor_handle_popup_result(result)) {
+                ui_screen_set(UI_SCREEN_FILE_BROWSER);
+            }
+        } else if (result == UI_POPUP_RENAME) {
             s_kb_purpose = KB_PURPOSE_RENAME;
             ui_keyboard_open(s_kb_target_name);
         } else if (result == UI_POPUP_DELETE) {
-            esp_err_t err = fm_delete_entry(s_kb_target_name, s_kb_target_is_dir);
-            if (err == ESP_OK) {
-                /* Прежний индекс теперь указывает на следующую запись.
-                   Если удалили последнюю — выбираем предыдущую. */
-                browser_clamp_focus();
-            } else {
-                ESP_LOGE("UI", "Delete failed: %s", esp_err_to_name(err));
-                ui_popup_show_error("Delete failed");
-            }
+            worker_start(
+                fm_worker_send_delete(s_kb_target_name, s_kb_target_is_dir),
+                FM_CMD_DELETE
+            );
         }
         ui_render(canvas);
         return;
@@ -312,7 +369,11 @@ void ui_controller_handle_event(
         ui_keyboard_handle_event(evt);
 
         if (!ui_keyboard_is_open()) {
-            handle_keyboard_result();
+            if (ui_screen_get() == UI_SCREEN_FILE_EDITOR) {
+                ui_file_editor_handle_keyboard_result();
+            } else {
+                handle_keyboard_result();
+            }
         }
 
         ui_render(canvas);
@@ -332,27 +393,12 @@ void ui_controller_handle_event(
             return;
 
         case UI_SCREEN_FILE_EDITOR:
-            switch (evt) {
-                case UI_EVT_UP:
-                case UI_EVT_DOWN:
-                    ui_focus_move(UI_FOCUS_FILE_EDITOR,
-                                  (uint8_t)fm_text_edit_line_count(), evt);
-                    break;
-                case UI_EVT_SELECT:
-                    s_kb_target_line = ui_focus_get(UI_FOCUS_FILE_EDITOR);
-                    s_kb_purpose = KB_PURPOSE_EDIT_LINE;
-                    ui_keyboard_open(fm_text_edit_get_line(s_kb_target_line));
-                    break;
-                case UI_EVT_LEFT:
-                    if (fm_text_edit_save()) {
-                        fm_text_edit_close();
-                        ui_screen_set(UI_SCREEN_FILE_BROWSER);
-                    } else {
-                        ESP_LOGE("UI", "Save failed; document retained in editor");
-                    }
-                    break;
-                default:
-                    break;
+            if (evt == UI_EVT_CONTEXT) {
+                ui_file_editor_open_actions();
+            } else {
+                if (ui_file_editor_handle_event(evt)) {
+                    ui_screen_set(UI_SCREEN_FILE_BROWSER);
+                }
             }
             ui_render(canvas);
             return;
@@ -370,13 +416,65 @@ void ui_controller_handle_event(
     handle_menu_event(evt, canvas, menu);
 }
 
-// Отдельная функция на уровне файла, не внутри handle_event().
-// На подготовительном этапе ответы только извлекаются и логируются.
+// Worker replies are consumed without blocking the UI task.
 void ui_controller_poll_worker(gfx_canvas_t *canvas)
 {
-    (void)canvas;
     fm_worker_event_t event;
     while (fm_worker_receive_event(&event)) {
+        bool render_needed = false;
+
+        if (event.command == FM_CMD_OPEN_FILE &&
+            s_pending_command == FM_CMD_OPEN_FILE) {
+            s_pending_command = FM_CMD_NONE;
+            ui_render_set_worker_status(NULL);
+            if (event.type == FM_EVT_FILE_LOADED) {
+                ui_file_editor_open_loaded();
+                ui_focus_reset(UI_FOCUS_FILE_EDITOR);
+                ui_screen_set(UI_SCREEN_FILE_EDITOR);
+            } else if (event.type == FM_EVT_ERROR) {
+                ui_popup_show_error("Open failed");
+            }
+            render_needed = true;
+        } else if (event.command == FM_CMD_SAVE_FILE) {
+            if (ui_file_editor_handle_worker_event(&event)) {
+                ui_screen_set(UI_SCREEN_FILE_BROWSER);
+            }
+            render_needed = true;
+        } else if (event.command == s_pending_command &&
+                   event.type == FM_EVT_CACHE_UPDATED) {
+            fm_worker_cmd_type_t completed = s_pending_command;
+            s_pending_command = FM_CMD_NONE;
+            ui_render_set_worker_status(NULL);
+
+            switch (completed) {
+                case FM_CMD_ENTER_VOLUME:
+                    ui_focus_reset(UI_FOCUS_FILE_BROWSER);
+                    ui_screen_set(UI_SCREEN_FILE_BROWSER);
+                    break;
+                case FM_CMD_ENTER_DIR:
+                case FM_CMD_GO_UP:
+                    ui_focus_reset(UI_FOCUS_FILE_BROWSER);
+                    break;
+                case FM_CMD_CREATE_FILE:
+                case FM_CMD_CREATE_DIR:
+                case FM_CMD_RENAME:
+                    browser_select_name(s_pending_focus_name);
+                    break;
+                case FM_CMD_DELETE:
+                    browser_clamp_focus();
+                    break;
+                default:
+                    break;
+            }
+            render_needed = true;
+        } else if (event.command == s_pending_command &&
+                   event.type == FM_EVT_ERROR) {
+            s_pending_command = FM_CMD_NONE;
+            ui_render_set_worker_status(NULL);
+            ui_popup_show_error("FM operation failed");
+            render_needed = true;
+        }
+
         if (event.type == FM_EVT_ERROR) {
             ESP_LOGE("UI", "FM worker command=%d error=%s",
                      (int)event.command, esp_err_to_name(event.error));
@@ -384,5 +482,14 @@ void ui_controller_poll_worker(gfx_canvas_t *canvas)
             ESP_LOGI("UI", "FM worker command=%d event=%d",
                      (int)event.command, (int)event.type);
         }
+
+        if (render_needed && canvas != NULL) {
+            ui_render(canvas);
+        }
     }
+}
+
+bool ui_controller_worker_pending(void)
+{
+    return s_pending_command != FM_CMD_NONE;
 }
