@@ -1,4 +1,8 @@
 #include "fm_text_view.h"
+#include "file_service.h"
+
+#define fopen(...) file_service_fopen_stream(__VA_ARGS__)
+#define fclose(...) file_service_fclose_stream(__VA_ARGS__)
 
 #include <stdio.h>
 #include <string.h>

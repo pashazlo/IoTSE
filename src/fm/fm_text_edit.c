@@ -1,4 +1,11 @@
 #include "fm_text_edit.h"
+#include "file_service.h"
+
+#define stat(...) file_service_stat_posix(__VA_ARGS__)
+#define remove(...) file_service_remove_posix(__VA_ARGS__)
+#define rename(...) file_service_rename_posix(__VA_ARGS__)
+#define fopen(...) file_service_fopen_stream(__VA_ARGS__)
+#define fclose(...) file_service_fclose_stream(__VA_ARGS__)
 #include "fm.h"
 
 #include <stdio.h>

@@ -22,9 +22,13 @@ extern "C" {
 #define SPI_BUS_MOSI_GPIO  17      // Data Out (Master→Slaves) — слушают ВСЕ
 #define SPI_BUS_MISO_GPIO  8       // Data In (Slaves→Master) — подключи SD картовод сюда!
 
+// Device-specific chip selects on the shared bus.
+#define SPI_BUS_DISPLAY_CS_GPIO  7
+#define SPI_BUS_SD_CS_GPIO       3
+
 // NOTE: Каждое устройство (Display, SD card) имеет свой CS (Chip Select):
 // - Display: DISP_CS_GPIO = 7 (в components/display/display.c)
-// - SD card: SD_CS_GPIO = 9 (будет добавлено в компонент sd_card)
+// - SD card: SPI_BUS_SD_CS_GPIO = 3
 // SCK и MOSI общие, но мьютекс (см. ниже) гарантирует синхронизацию операций.
 
 /**

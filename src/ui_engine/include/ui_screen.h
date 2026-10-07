@@ -11,7 +11,10 @@ typedef enum {
     UI_SCREEN_RF_MENU,
     UI_SCREEN_NRF_MENU,
     UI_SCREEN_WIFI_MENU,
-    UI_SCREEN_BT_MENU,
+    UI_SCREEN_WIFI_NETWORKS,
+    UI_SCREEN_WIFI_MONITOR,
+    UI_SCREEN_WIFI_MAP,
+    UI_SCREEN_WIFI_EXPORT,
     UI_SCREEN_SETTINGS_MENU,
     UI_SCREEN_FILE_VOLUMES,   // выбор тома: Internal / SD Card
     UI_SCREEN_FILE_BROWSER,   // список файлов/папок текущей директории
@@ -23,7 +26,10 @@ void action_ir(void);
 void action_rf(void);
 void action_nrf(void);
 void action_wifi(void);
-void action_bt(void);
+void action_wifi_connect(void);
+void action_wifi_monitor(void);
+void action_wifi_map(void);
+void action_wifi_export(void);
 void action_settings(void);
 
 /**

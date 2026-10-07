@@ -1,8 +1,14 @@
 #include "spi_bus.h"
 #include "display.h"
 #include "storage.h"
+#include "storage_sd.h"
+#include "storage_manager.h"
+#include "file_service.h"
 #include "fm.h"
-#include "fm_worker.h"   // ← НОВОЕ
+#include "fm_worker.h"
+#include "wifi_port_scan.h"
+#include "wifi_analyzer.h"
+#include "wifi_worker.h"
 #include "esp_log.h"
 
 #include "freertos/FreeRTOS.h"
@@ -15,6 +21,18 @@
 
 
 static const char *TAG = "app_main";
+
+static bool internal_available(void)
+{
+    storage_volume_snapshot_t v;
+    return storage_manager_get_volume(STORAGE_VOLUME_INTERNAL, &v) && v.mounted;
+}
+
+static bool sd_available(void)
+{
+    storage_volume_snapshot_t v;
+    return storage_manager_get_volume(STORAGE_VOLUME_SD, &v) && v.mounted;
+}
 
 
 // ============================================================================
@@ -107,12 +125,53 @@ void app_main(void)
     }
 
     // Регистрируем внутренний раздел как том файлового менеджера.
+    err = storage_sd_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "SD lifecycle initialization failed: %s",
+                 esp_err_to_name(err));
+        return;
+    }
+
+    /* Mount removable media before publishing volumes to consumers. Missing
+     * SD is a supported degraded state; File Service will report it exactly. */
+    err = spi_bus_shared_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Shared SPI initialization failed: %s", esp_err_to_name(err));
+        return;
+    }
+    err = storage_sd_mount_board();
+    if (err != ESP_OK)
+        ESP_LOGW(TAG, "SD card is unavailable: %s", esp_err_to_name(err));
+
+    err = file_service_init();
+    if (err != ESP_OK)
+        ESP_LOGW(TAG, "Storage layout incomplete: %s", esp_err_to_name(err));
+
+    /* Publish volumes only after Storage Manager has copied their state and
+     * idempotent directory initialization has completed. */
     static const fm_volume_t internal_volume = {
         .label = "Internal",
         .mount_point = STORAGE_FAT_MOUNT_POINT,
-        .is_available = storage_fat_is_mounted,
+        .is_available = internal_available,
     };
-    fm_register_volume(&internal_volume);
+    err = fm_register_volume(&internal_volume);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Internal volume registration failed: %s",
+                 esp_err_to_name(err));
+        return;
+    }
+
+    static const fm_volume_t sd_volume = {
+        .label = "SD Card",
+        .mount_point = STORAGE_SD_MOUNT_POINT,
+        .is_available = sd_available,
+    };
+    err = fm_register_volume(&sd_volume);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "SD volume registration failed: %s",
+                 esp_err_to_name(err));
+        return;
+    }
 
 
     // ========================================================================
@@ -131,6 +190,41 @@ void app_main(void)
 
     ESP_LOGI(TAG, "✓ FM Worker инициализирован");
 
+    // WiFi Worker starts now and may arm saved-network autoconnect.
+    ESP_LOGI(TAG, "Инициализация WiFi Worker...");
+
+    err = wifi_worker_init();
+
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Ошибка инициализации WiFi Worker: %s",
+                 esp_err_to_name(err));
+        return;
+    }
+
+    ESP_LOGI(TAG, "✓ WiFi Worker инициализирован");
+
+    // Port scanner owns a persistent sleeping task. Creating it here avoids
+    // runtime stack allocation after WiFi and the UI have fragmented RAM.
+    ESP_LOGI(TAG, "Инициализация WiFi Port Scanner...");
+
+    err = wifi_port_scan_init();
+
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Ошибка инициализации WiFi Port Scanner: %s",
+                 esp_err_to_name(err));
+        ESP_LOGW(TAG, "TCP scanner отключён; остальные функции продолжают запуск");
+    } else {
+        ESP_LOGI(TAG, "✓ WiFi Port Scanner инициализирован");
+    }
+
+    ESP_LOGI(TAG, "Initializing passive frame analyzer...");
+    err = wifi_analyzer_init();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Analyzer unavailable: %s", esp_err_to_name(err));
+    } else {
+        ESP_LOGI(TAG, "Passive frame analyzer initialized");
+    }
+
     // ========================================================================
     // 1. SPI
     // ========================================================================
@@ -145,7 +239,6 @@ void app_main(void)
     }
 
     ESP_LOGI(TAG, "✓ Шина SPI инициализирована");
-
 
     // ========================================================================
     // 2. Buttons

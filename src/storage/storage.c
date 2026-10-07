@@ -54,7 +54,9 @@ esp_err_t storage_fat_init(void)
 
     esp_vfs_fat_mount_config_t mount_config = {
         .max_files = 4,
-        .format_if_mount_failed = true,
+        /* Never destroy user files because mounting failed. Formatting is a
+         * separate, explicit recovery action. */
+        .format_if_mount_failed = false,
         // 0 заставляет VFS автоматически выбрать безопасный размер кластера
         .allocation_unit_size = 0,
     };

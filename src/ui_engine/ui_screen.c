@@ -1,6 +1,10 @@
 #include "ui_screen.h"
 #include "esp_log.h"
 #include "ui_keyboard.h"
+#include "ui_wifi_connect.h"
+#include "ui_wifi_monitor.h"
+#include "ui_wifi_map.h"
+#include "ui_wifi_export.h"
 
 static const char *TAG = "UI_SCREEN";
 
@@ -47,10 +51,24 @@ void action_wifi(void)
     current_screen = UI_SCREEN_WIFI_MENU;
 }
 
-void action_bt(void)
+void action_wifi_connect(void)
 {
-    ESP_LOGI(TAG, "Opened Bluetooth");
-    current_screen = UI_SCREEN_BT_MENU;
+    ui_wifi_connect_begin();
+}
+
+void action_wifi_monitor(void)
+{
+    ui_wifi_monitor_open();
+}
+
+void action_wifi_map(void)
+{
+    ui_wifi_map_open();
+}
+
+void action_wifi_export(void)
+{
+    ui_wifi_export_open();
 }
 
 void action_settings(void)

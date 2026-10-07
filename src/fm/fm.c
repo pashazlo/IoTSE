@@ -1,4 +1,14 @@
 #include "fm.h"
+#include "file_service.h"
+
+#define opendir(...) file_service_opendir_stream(__VA_ARGS__)
+#define closedir(...) file_service_closedir_stream(__VA_ARGS__)
+#define stat(...) file_service_stat_posix(__VA_ARGS__)
+#define mkdir(...) file_service_mkdir_posix(__VA_ARGS__)
+#define remove(...) file_service_remove_posix(__VA_ARGS__)
+#define rename(...) file_service_rename_posix(__VA_ARGS__)
+#define fopen(...) file_service_fopen_stream(__VA_ARGS__)
+#define fclose(...) file_service_fclose_stream(__VA_ARGS__)
 
 #include <string.h>
 #include <strings.h>     // strcasecmp()
@@ -125,6 +135,10 @@ static uint8_t s_active_cache_bank = 0;
   return false;
   }
 
+  if (strnlen(name, FM_MAX_NAME_LEN) >= FM_MAX_NAME_LEN) {
+  return false;
+  }
+
   // "." и ".." являются специальными элементами файловой системы,
   // поэтому не могут использоваться как обычные имена.
   if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
@@ -214,18 +228,35 @@ return strip_internal_suffix(name, ".iotse.bak", unused, sizeof(unused)) ||
 // Регистрация томов
 // ============================================================================
 
-void fm_register_volume(const fm_volume_t *volume)
+esp_err_t fm_register_volume(const fm_volume_t *volume)
 {
 // Защита от NULL.
 if (volume == NULL) {
 ESP_LOGE(TAG, "Попытка зарегистрировать NULL-том");
-return;
+return ESP_ERR_INVALID_ARG;
 }
 
 // Минимальная проверка структуры тома.
-if (volume->label == NULL || volume->mount_point == NULL) {
+if (volume->label == NULL || volume->label[0] == '\0' ||
+    volume->mount_point == NULL || volume->mount_point[0] != '/' ||
+    volume->mount_point[1] == '\0') {
     ESP_LOGE(TAG, "Том имеет NULL label или mount_point");
-    return;
+    return ESP_ERR_INVALID_ARG;
+}
+
+size_t mount_len = strnlen(volume->mount_point, FM_MAX_PATH_LEN);
+if (mount_len >= FM_MAX_PATH_LEN || volume->mount_point[mount_len - 1] == '/') {
+    ESP_LOGE(TAG, "Invalid volume mount point: '%s'", volume->mount_point);
+    return ESP_ERR_INVALID_ARG;
+}
+
+for (uint8_t i = 0; i < s_volume_count; ++i) {
+    const fm_volume_t *registered = s_volumes[i];
+    if (registered != NULL &&
+        strcmp(registered->mount_point, volume->mount_point) == 0) {
+        ESP_LOGW(TAG, "Volume already registered: '%s'", volume->mount_point);
+        return ESP_ERR_INVALID_STATE;
+    }
 }
 
 if (s_volume_count >= FM_MAX_VOLUMES) {
@@ -236,7 +267,7 @@ if (s_volume_count >= FM_MAX_VOLUMES) {
         volume->label
     );
 
-    return;
+    return ESP_ERR_NO_MEM;
 }
 
 s_volumes[s_volume_count++] = volume;
@@ -247,6 +278,8 @@ ESP_LOGI(
     volume->label,
     volume->mount_point
 );
+
+return ESP_OK;
 
 }
 
@@ -1030,7 +1063,17 @@ if (!path_exists(full_path)) {
 }
 
 
-if (is_dir) {
+struct stat target_info;
+if (stat(full_path, &target_info) != 0) {
+    return ESP_FAIL;
+}
+
+bool actual_is_dir = S_ISDIR(target_info.st_mode);
+if (actual_is_dir != is_dir) {
+    ESP_LOGW(TAG, "Entry type changed since snapshot: '%s'", full_path);
+}
+
+if (actual_is_dir) {
     err = validate_directory_tree(full_path, 0);
     if (err == ESP_OK) {
         err = delete_directory_tree(full_path, 0);
@@ -1046,7 +1089,7 @@ if (err != ESP_OK) {
         TAG,
         "Не удалось удалить '%s' (is_dir=%d)",
         full_path,
-        is_dir
+        actual_is_dir
     );
 
     return err;

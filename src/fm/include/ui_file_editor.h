@@ -23,6 +23,9 @@ void ui_file_editor_handle_keyboard_result(void);
 /* The caret blinks even when no button event is received. */
 bool ui_file_editor_needs_tick(void);
 
+/* Update only the 1-pixel-wide caret rectangle on a blink-only tick. */
+esp_err_t ui_file_editor_update_caret(gfx_canvas_t *canvas);
+
 void ui_file_editor_open_actions(void);
 
 /* Returns true only after a successful Save & Exit. */

@@ -6,6 +6,7 @@
 #include "ui_screen.h"
 #include "ui_render.h"
 #include "ui_controller.h"
+#include "ui_file_editor.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -161,6 +162,7 @@ void ui_task(void *arg)
         // (нужен только для часов на главном экране) — так дисплей
         // не перерисовывается зря и не тратится энергия батареи.
         bool needs_tick = ui_render_needs_tick();
+        bool caret_only_tick = false;
         TickType_t wait_ticks;
         if (ui_controller_worker_pending()) {
             wait_ticks = pdMS_TO_TICKS(50);
@@ -170,6 +172,7 @@ void ui_task(void *arg)
             /* Only the text caret may use the economical tick. A popup
                cursor keeps the normal 30 FPS animation cadence. */
             wait_ticks = pdMS_TO_TICKS(250);
+            caret_only_tick = true;
         } else {
             wait_ticks = needs_tick
                 ? pdMS_TO_TICKS(33)
@@ -194,13 +197,24 @@ void ui_task(void *arg)
             );
         }
 
+        bool caret_updated = false;
+        if (event_received != pdTRUE && caret_only_tick &&
+            ui_screen_get() == UI_SCREEN_FILE_EDITOR) {
+            esp_err_t err = ui_file_editor_update_caret(&canvas);
+            if (err != ESP_OK) {
+                ESP_LOGW(TAG, "Caret dirty update failed: %s",
+                         esp_err_to_name(err));
+            }
+            caret_updated = true;
+        }
+
 
         // Перерисовываем в двух случаях:
         // 1) главное меню — нужно для часов (раз в секунду);
         // 2) рамка или длинное имя требуют кадров — рисуем следующий
         //    кадр его движения, даже если событие не приходило.
         if (ui_screen_get() == UI_SCREEN_MAIN_MENU ||
-            ui_render_needs_tick()) {
+            (ui_render_needs_tick() && !caret_updated)) {
 
             ui_render(&canvas);
         }

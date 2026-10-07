@@ -47,7 +47,9 @@ typedef struct {
 
 /**
  * @brief An in-RAM RGB565 canvas. Every draw call writes into `buf`
- *        (fast, no SPI traffic) and widens the dirty rectangle. Nothing
+ *        (fast, no SPI traffic) and widens the dirty rectangle. The canvas
+ *        normally lives in PSRAM; display owns small internal DMA buffers.
+ *        Nothing
  *        reaches the physical panel until gfx_canvas_flush().
  */
 typedef struct {
@@ -66,8 +68,8 @@ typedef struct {
 } gfx_canvas_t;
 
 /**
- * @brief Allocate a canvas of the given size. Uses DMA-capable memory
- *        so the buffer can be handed straight to display_draw_bitmap().
+ * @brief Allocate a canvas of the given size. Prefers PSRAM and falls back to
+ *        ordinary byte-addressable memory. DMA capability is not required.
  *        A full 240x320 canvas costs 240*320*2 = 150KB — fine on
  *        PSRAM-equipped boards, tight on internal SRAM alone. For
  *        SRAM-only boards, size canvases to just the region you're
@@ -78,9 +80,17 @@ void gfx_canvas_deinit(gfx_canvas_t *canvas);
 
 // --- Primitives (all clip to canvas bounds, all widen the dirty rect) ---
 void gfx_canvas_fill(gfx_canvas_t *c, uint16_t color);                       // whole canvas
+/* Dim the existing RGB565 canvas to 50% brightness (modal backdrop). */
+void gfx_canvas_dim(gfx_canvas_t *c);
 void gfx_canvas_draw_pixel(gfx_canvas_t *c, int16_t x, int16_t y, uint16_t color);
 void gfx_canvas_fill_rect(gfx_canvas_t *c, int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color);
 void gfx_canvas_draw_rect(gfx_canvas_t *c, int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color); // outline
+void gfx_canvas_fill_round_rect(gfx_canvas_t *c, int16_t x, int16_t y,
+                                int16_t w, int16_t h, int16_t radius,
+                                uint16_t color);
+void gfx_canvas_draw_round_rect(gfx_canvas_t *c, int16_t x, int16_t y,
+                                int16_t w, int16_t h, int16_t radius,
+                                uint16_t color);
 void gfx_canvas_draw_line(gfx_canvas_t *c, int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color);
 void gfx_canvas_draw_circle(gfx_canvas_t *c, int16_t x0, int16_t y0, int16_t r, uint16_t color);
 void gfx_canvas_fill_circle(gfx_canvas_t *c, int16_t x0, int16_t y0, int16_t r, uint16_t color);
@@ -117,8 +127,8 @@ int16_t gfx_canvas_measure_text_width(const gfx_font_t *font, const char *str);
 
 /**
  * @brief Push exactly the dirty rectangle to the physical panel via
- *        display_draw_bitmap(), then clears the dirty rect. If nothing was
- *        drawn since the last flush, this is a no-op (no SPI traffic).
+ *        display_draw_bitmap(), then clears the dirty rect only on success.
+ *        If nothing was drawn since the last flush, this is a no-op.
  */
 esp_err_t gfx_canvas_flush(gfx_canvas_t *c);
 

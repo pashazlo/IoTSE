@@ -45,6 +45,7 @@
 # Kernel Module Compile Results
 *.mod*
 *.cmd
+!scripts/flash_jtag_fresh.cmd
 .tmp_versions/
 modules.order
 Module.symvers

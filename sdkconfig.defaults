@@ -23,9 +23,16 @@ CONFIG_HEAP_MEMORY_PROTECTION=y
 # FreeRTOS
 CONFIG_FREERTOS_THREAD_LOCAL_STORAGE_POINTER_IN_TCB=y
 
+# Protect FatFs file objects when background capture/export and File Manager
+# access the same mounted volume.
+CONFIG_FATFS_FS_LOCK=8
+
 # Logging
 CONFIG_LOG_DEFAULT_LEVEL=2
 
 # Performance
 CONFIG_ESP_TASK_WDT_EN=y
 CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+
+# The internal ESP32-S3 radio is reserved for Wi-Fi in this firmware.
+# CONFIG_BT_ENABLED is not set

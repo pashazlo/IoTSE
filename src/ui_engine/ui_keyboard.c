@@ -10,18 +10,42 @@
 #define KEYBOARD_NAME_MAX 64
 static char s_buffer[UI_KEYBOARD_MAX_TEXT_LEN];
 static size_t s_buf_pos;
+static size_t s_input_limit;
 static bool s_is_open, s_confirmed;
 static bool s_editor_mode;
+static bool s_masked;
+static const char *s_prompt;
+static uint8_t s_char_mode;
 static uint16_t s_editor_line_number;
 static uint8_t s_row, s_col;
-static const char s_grid[GRID_ROWS][GRID_COLS] = {
+static const char s_grids[3][GRID_ROWS][GRID_COLS] = {{
     {'1','2','3','4','5','6','7','8','9','0'},
     {'q','w','e','r','t','y','u','i','o','p'},
     {'a','s','d','f','g','h','j','k','l','_'},
     {'z','x','c','v','b','n','m','.',' ','<'}
-};
+}, {
+    {'1','2','3','4','5','6','7','8','9','0'},
+    {'Q','W','E','R','T','Y','U','I','O','P'},
+    {'A','S','D','F','G','H','J','K','L','_'},
+    {'Z','X','C','V','B','N','M','.',' ','<'},
+}, {
+    {'!','@','#','$','%','^','&','*','(',')'},
+    {'-','+','=','[',']','{','}',';',':','/'},
+    {'\\','|','?',',','.','<','>','~','`','_'},
+    {'"','\'','0','1','2','3','4','5','6','<'},
+}};
 
 void ui_keyboard_open(const char *initial_text)
+{
+    ui_keyboard_open_prompt("Text", initial_text, KEYBOARD_NAME_MAX - 1, false);
+}
+
+void ui_keyboard_open_prompt(
+    const char *prompt,
+    const char *initial_text,
+    size_t max_text_len,
+    bool masked
+)
 {
     if (!initial_text) initial_text = "";
     strncpy(s_buffer, initial_text, sizeof(s_buffer) - 1);
@@ -30,6 +54,12 @@ void ui_keyboard_open(const char *initial_text)
     s_row = s_col = 0;
     s_confirmed = false;
     s_editor_mode = false;
+    s_masked = masked;
+    s_prompt = prompt != NULL ? prompt : "Text";
+    s_char_mode = 0;
+    s_input_limit = max_text_len < sizeof(s_buffer)
+        ? max_text_len
+        : sizeof(s_buffer) - 1;
     s_is_open = true;
 }
 
@@ -50,6 +80,10 @@ void ui_keyboard_open_editor(
     s_row = s_col = 0;
     s_confirmed = false;
     s_editor_mode = true;
+    s_masked = false;
+    s_prompt = "Text";
+    s_char_mode = 0;
+    s_input_limit = sizeof(s_buffer) - 1;
     s_is_open = true;
 }
 void ui_keyboard_cancel(void) { s_confirmed = false; s_is_open = false; }
@@ -63,25 +97,26 @@ void ui_keyboard_handle_event(ui_event_t evt)
     if (!s_is_open) return;
     switch (evt) {
     case UI_EVT_UP:
-        if (s_row) { if (s_row == GRID_ROWS) s_col *= 3; s_row--; }
+        if (s_row) { if (s_row == GRID_ROWS) s_col = s_col * GRID_COLS / 4; s_row--; }
         break;
     case UI_EVT_DOWN:
         if (s_row < GRID_ROWS) {
             s_row++;
-            if (s_row == GRID_ROWS) { s_col /= 3; if (s_col > 2) s_col = 2; }
+            if (s_row == GRID_ROWS) { s_col = s_col * 4 / GRID_COLS; if (s_col > 3) s_col = 3; }
         }
         break;
     case UI_EVT_LEFT: if (s_col) s_col--; break;
     case UI_EVT_RIGHT:
-        if (s_col + 1 < (s_row == GRID_ROWS ? 3 : GRID_COLS)) s_col++;
+        if (s_col + 1 < (s_row == GRID_ROWS ? 4 : GRID_COLS)) s_col++;
         break;
     case UI_EVT_SELECT:
         if (s_row == GRID_ROWS) {
             if (s_col == 0) { s_confirmed = true; s_is_open = false; }
             else if (s_col == 1) ui_keyboard_cancel();
-            else { s_buf_pos = 0; s_buffer[0] = '\0'; }
+            else if (s_col == 2) { s_buf_pos = 0; s_buffer[0] = '\0'; }
+            else { s_char_mode = (s_char_mode + 1U) % 3U; }
         } else {
-            char ch = s_grid[s_row][s_col];
+            char ch = s_grids[s_char_mode][s_row][s_col];
             if (ch == '<') {
                 if (s_buf_pos) {
                     if (s_editor_mode) {
@@ -101,10 +136,7 @@ void ui_keyboard_handle_event(ui_event_t evt)
                     }
                 }
             } else {
-                size_t input_limit = s_editor_mode
-                    ? sizeof(s_buffer) - 1
-                    : KEYBOARD_NAME_MAX - 1;
-                if (strlen(s_buffer) >= input_limit) {
+                if (strlen(s_buffer) >= s_input_limit) {
                     break;
                 }
                 if (s_editor_mode) {
@@ -138,16 +170,22 @@ void ui_keyboard_handle_event(ui_event_t evt)
 static void draw_key(gfx_canvas_t *c, int x, int y, int w,
                      const char *label, bool selected)
 {
-    gfx_canvas_fill_rect(c, x, y, w, 20, selected ? 0xFFFF : 0x2104);
+    const uint16_t border = selected ? 0xFFFF : 0x4208;
+    const uint16_t text = selected ? 0xFFFF : 0xC618;
+
+    gfx_canvas_draw_round_rect(c, x, y, w, 20, 3, border);
+    if (selected && w > 8) {
+        gfx_canvas_draw_round_rect(c, x + 2, y + 2, w - 4, 16, 3, 0x7BEF);
+    }
     int tw = gfx_canvas_measure_text_width(UI_FONT, label);
     gfx_canvas_draw_str(c, x + (w - tw) / 2, y + 14, label,
-                        UI_FONT, selected ? 0x0000 : 0xFFFF);
+                        UI_FONT, text);
 }
 void ui_keyboard_draw(gfx_canvas_t *c)
 {
     if (!c || !s_is_open) return;
     gfx_canvas_fill(c, 0x0000);
-    gfx_canvas_draw_str(c, 8, 14, "Text", UI_FONT, 0xFFFF);
+    gfx_canvas_draw_str(c, 8, 14, s_prompt, UI_FONT, 0xFFFF);
     if (s_editor_mode) {
         char number[7];
         snprintf(
@@ -194,18 +232,29 @@ void ui_keyboard_draw(gfx_canvas_t *c)
     } else {
         /* Show the tail so newly typed characters remain visible. */
         size_t start = s_buf_pos > 18 ? s_buf_pos - 18 : 0;
-        gfx_canvas_draw_str(c, 8, 36, s_buffer + start, UI_FONT, 0xFFFF);
+        char preview[20];
+        size_t visible = strlen(s_buffer + start);
+        if (visible >= sizeof(preview)) visible = sizeof(preview) - 1;
+        if (s_masked) {
+            memset(preview, '*', visible);
+            preview[visible] = '\0';
+        } else {
+            memcpy(preview, s_buffer + start, visible);
+            preview[visible] = '\0';
+        }
+        gfx_canvas_draw_str(c, 8, 36, preview, UI_FONT, 0xFFFF);
     }
     gfx_canvas_draw_line(c, 8, 42, 311, 42, 0x8410);
     for (int r = 0; r < GRID_ROWS; r++) {
         for (int col = 0; col < GRID_COLS; col++) {
-            char label[2] = {s_grid[r][col], '\0'};
+            char label[2] = {s_grids[s_char_mode][r][col], '\0'};
             draw_key(c, 2 + col * 32, 48 + r * 22, 28, label,
                      s_row == r && s_col == col);
         }
     }
-    static const char *actions[] = {"OK", "ESC", "CLEAR"};
-    for (int i = 0; i < 3; i++)
-        draw_key(c, 2 + i * 106, 140, 102, actions[i],
+    static const char *mode_names[] = {"abc", "ABC", "#+="};
+    const char *actions[] = {"OK", "ESC", "CLEAR", mode_names[s_char_mode]};
+    for (int i = 0; i < 4; i++)
+        draw_key(c, 2 + i * 79, 140, 75, actions[i],
                  s_row == GRID_ROWS && s_col == i);
 }

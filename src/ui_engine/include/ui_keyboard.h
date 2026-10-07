@@ -1,4 +1,5 @@
 #pragma once
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include "ui_event.h"
@@ -13,6 +14,12 @@ extern "C" {
 
 /* Open a modal keyboard; initial text is copied and bounded. */
 void ui_keyboard_open(const char *initial_text);
+void ui_keyboard_open_prompt(
+    const char *prompt,
+    const char *initial_text,
+    size_t max_text_len,
+    bool masked
+);
 /* Editor mode shows "NNN text|" and edits a temporary copy of one line. */
 void ui_keyboard_open_editor(
     const char *line_text,

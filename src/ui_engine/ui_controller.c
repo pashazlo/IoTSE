@@ -9,6 +9,12 @@
 #include "ui_keyboard.h"
 #include "ui_popup.h"
 #include "ui_file_editor.h"
+#include "ui_wifi_connect.h"
+#include "ui_wifi_monitor.h"
+#include "ui_wifi_map.h"
+#include "ui_wifi_export.h"
+#include "ui_wifi.h"
+#include "wifi_worker.h"
 
 #include "fm.h"
 #include "fm_worker.h"
@@ -329,6 +335,15 @@ static void handle_menu_event(ui_event_t evt, gfx_canvas_t *canvas, const ui_men
             break;
         }
 
+        case UI_EVT_CONTEXT:
+            if (menu->focus_id == UI_FOCUS_WIFI &&
+                ui_focus_get(UI_FOCUS_WIFI) == 0 &&
+                wifi_worker_is_connected()) {
+                ui_popup_open_wifi();
+                ui_render(canvas);
+            }
+            break;
+
         default:
             break;
     }
@@ -344,6 +359,11 @@ void ui_controller_handle_event(
     gfx_canvas_t *canvas
 )
 {
+    if (ui_wifi_handle_event(evt)) {
+        ui_render(canvas);
+        return;
+    }
+
     /* Modal dispatch comes before every underlying screen handler. */
     if (ui_popup_is_open()) {
         ui_popup_result_t result = ui_popup_handle_event(evt);
@@ -359,6 +379,10 @@ void ui_controller_handle_event(
                 fm_worker_send_delete(s_kb_target_name, s_kb_target_is_dir),
                 FM_CMD_DELETE
             );
+        } else if (result == UI_POPUP_WIFI_DISCONNECT) {
+            ui_wifi_request_disconnect();
+        } else if (ui_screen_get() == UI_SCREEN_WIFI_NETWORKS) {
+            (void)ui_wifi_connect_handle_popup_result(result);
         }
         ui_render(canvas);
         return;
@@ -371,6 +395,8 @@ void ui_controller_handle_event(
         if (!ui_keyboard_is_open()) {
             if (ui_screen_get() == UI_SCREEN_FILE_EDITOR) {
                 ui_file_editor_handle_keyboard_result();
+            } else if (ui_screen_get() == UI_SCREEN_WIFI_NETWORKS) {
+                ui_wifi_connect_handle_keyboard_result();
             } else {
                 handle_keyboard_result();
             }
@@ -403,6 +429,22 @@ void ui_controller_handle_event(
             ui_render(canvas);
             return;
 
+        case UI_SCREEN_WIFI_NETWORKS:
+            ui_wifi_connect_handle_event(evt, canvas);
+            return;
+
+        case UI_SCREEN_WIFI_MONITOR:
+            ui_wifi_monitor_handle_event(evt, canvas);
+            return;
+
+        case UI_SCREEN_WIFI_MAP:
+            ui_wifi_map_handle_event(evt, canvas);
+            return;
+
+        case UI_SCREEN_WIFI_EXPORT:
+            ui_wifi_export_handle_event(evt, canvas);
+            return;
+
         default:
             break;
     }
@@ -419,6 +461,9 @@ void ui_controller_handle_event(
 // Worker replies are consumed without blocking the UI task.
 void ui_controller_poll_worker(gfx_canvas_t *canvas)
 {
+    ui_wifi_connect_poll(canvas);
+    ui_wifi_monitor_poll(canvas);
+    ui_wifi_map_poll(canvas);
     fm_worker_event_t event;
     while (fm_worker_receive_event(&event)) {
         bool render_needed = false;
@@ -491,5 +536,6 @@ void ui_controller_poll_worker(gfx_canvas_t *canvas)
 
 bool ui_controller_worker_pending(void)
 {
-    return s_pending_command != FM_CMD_NONE;
+    return s_pending_command != FM_CMD_NONE || ui_wifi_connect_pending() ||
+           ui_wifi_map_pending();
 }

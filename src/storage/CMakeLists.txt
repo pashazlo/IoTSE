@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "storage.c"
+    SRCS "file_service.c" "storage.c"
     INCLUDE_DIRS "include"
     REQUIRES nvs_flash fatfs wear_levelling
 )

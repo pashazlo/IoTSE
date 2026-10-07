@@ -140,12 +140,10 @@ uint8_t count;
 @brief Зарегистрировать файловый том.
 
 
-NULL-указатель игнорируется.
-
-
-Если достигнут FM_MAX_VOLUMES, новый том не добавляется.
+Возвращает ошибку для некорректного, дублирующегося или слишком длинного
+mount point, а также при исчерпании таблицы томов.
 */
-void fm_register_volume(const fm_volume_t *volume);
+esp_err_t fm_register_volume(const fm_volume_t *volume);
 
 /**
 

@@ -10,8 +10,8 @@
 // Порог в пикселях, ближе которого считаем, что курсор "доехал".
 #define UI_CURSOR_SNAP_EPS     0.5f
 
-// Длина одного "уса" уголка-скобки в пикселях.
-#define UI_CURSOR_CORNER_LEN   5
+// Длина одного округлого уголка-скобки в пикселях.
+#define UI_CURSOR_CORNER_LEN   7
 
 
 void ui_cursor_reset(ui_cursor_t *cur)
@@ -82,19 +82,28 @@ void ui_cursor_draw(gfx_canvas_t *canvas, const ui_cursor_t *cur, uint16_t color
     int16_t y1 = (int16_t)(cur->y + cur->h);
     int16_t len = UI_CURSOR_CORNER_LEN;
 
-    // Верхний левый уголок
-    gfx_canvas_draw_line(canvas, x0, y0, x0 + len, y0, color);
-    gfx_canvas_draw_line(canvas, x0, y0, x0, y0 + len, color);
+    // Четыре раздельных контура с плавным трёхпиксельным поворотом.
+    gfx_canvas_draw_line(canvas, x0 + 3, y0, x0 + len, y0, color);
+    gfx_canvas_draw_pixel(canvas, x0 + 2, y0, color);
+    gfx_canvas_draw_pixel(canvas, x0 + 1, y0 + 1, color);
+    gfx_canvas_draw_pixel(canvas, x0, y0 + 2, color);
+    gfx_canvas_draw_line(canvas, x0, y0 + 3, x0, y0 + len, color);
 
-    // Верхний правый уголок
-    gfx_canvas_draw_line(canvas, x1, y0, x1 - len, y0, color);
-    gfx_canvas_draw_line(canvas, x1, y0, x1, y0 + len, color);
+    gfx_canvas_draw_line(canvas, x1 - len, y0, x1 - 3, y0, color);
+    gfx_canvas_draw_pixel(canvas, x1 - 2, y0, color);
+    gfx_canvas_draw_pixel(canvas, x1 - 1, y0 + 1, color);
+    gfx_canvas_draw_pixel(canvas, x1, y0 + 2, color);
+    gfx_canvas_draw_line(canvas, x1, y0 + 3, x1, y0 + len, color);
 
-    // Нижний левый уголок
-    gfx_canvas_draw_line(canvas, x0, y1, x0 + len, y1, color);
-    gfx_canvas_draw_line(canvas, x0, y1, x0, y1 - len, color);
+    gfx_canvas_draw_line(canvas, x0, y1 - len, x0, y1 - 3, color);
+    gfx_canvas_draw_pixel(canvas, x0, y1 - 2, color);
+    gfx_canvas_draw_pixel(canvas, x0 + 1, y1 - 1, color);
+    gfx_canvas_draw_pixel(canvas, x0 + 2, y1, color);
+    gfx_canvas_draw_line(canvas, x0 + 3, y1, x0 + len, y1, color);
 
-    // Нижний правый уголок
-    gfx_canvas_draw_line(canvas, x1, y1, x1 - len, y1, color);
-    gfx_canvas_draw_line(canvas, x1, y1, x1, y1 - len, color);
+    gfx_canvas_draw_line(canvas, x1, y1 - len, x1, y1 - 3, color);
+    gfx_canvas_draw_pixel(canvas, x1, y1 - 2, color);
+    gfx_canvas_draw_pixel(canvas, x1 - 1, y1 - 1, color);
+    gfx_canvas_draw_pixel(canvas, x1 - 2, y1, color);
+    gfx_canvas_draw_line(canvas, x1 - len, y1, x1 - 3, y1, color);
 }

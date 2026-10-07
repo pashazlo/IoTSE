@@ -1,0 +1,17 @@
+#pragma once
+
+/* Stable values persisted by Known Networks v3. Do not reorder. */
+typedef enum {
+    WIFI_SECURITY_OPEN = 0,
+    WIFI_SECURITY_WEP,
+    WIFI_SECURITY_WPA_PSK,
+    WIFI_SECURITY_WPA2_PSK,
+    WIFI_SECURITY_WPA_WPA2_PSK,
+    WIFI_SECURITY_ENTERPRISE,
+    WIFI_SECURITY_WPA3_PSK,
+    WIFI_SECURITY_WPA2_WPA3_PSK,
+    WIFI_SECURITY_WAPI_PSK,
+    WIFI_SECURITY_OWE,
+    WIFI_SECURITY_DPP,
+    WIFI_SECURITY_UNKNOWN,
+} wifi_security_t;

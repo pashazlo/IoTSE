@@ -1,0 +1,10 @@
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include "wifi_known_networks_core.h"
+static const uint8_t B1[6]={0x10,0,0,0,0,1},B2[6]={0x10,0,0,0,0,2};
+int main(void){wifi_known_network_db_t db,out;wifi_known_db_init(&db);assert(wifi_known_db_valid(&db));assert(wifi_known_db_upsert_success(&db,"lab","password",3,6,B1,false));int i=wifi_known_db_find(&db,"lab");assert(i>=0&&!db.entries[i].auto_connect);assert(wifi_known_db_set_auto(&db,"lab",true));
+ /* same SSID under two BSSIDs: strongest visible BSSID is a hint, never a lock */wifi_known_visible_ap_t v[2]={{"lab",B1,-80,6,3},{"lab",B2,-40,11,3}};size_t vi=99;assert(wifi_known_db_select_visible(&db,v,2,&vi)==i&&vi==1);
+ /* stale saved BSSID absent: SSID match still selects current BSSID */wifi_known_visible_ap_t moved={"lab",B2,-60,1,3};assert(wifi_known_db_select_visible(&db,&moved,1,&vi)==i&&vi==0);
+ uint8_t wire[WIFI_KNOWN_DB_ENCODED_MAX];size_t n=wifi_known_db_encode(&db,wire,sizeof(wire));assert(n>0);assert(wifi_known_db_decode(wire,n,&out)==WIFI_KNOWN_CODEC_OK);assert(wifi_known_db_find(&out,"lab")>=0);assert(wifi_known_db_decode(NULL,0,&out)==WIFI_KNOWN_CODEC_MISSING);wire[20]^=0x55;assert(wifi_known_db_decode(wire,n,&out)==WIFI_KNOWN_CODEC_CORRUPT);
+ /* bounded store and deterministic oldest-success eviction */wifi_known_db_init(&db);assert(wifi_known_db_upsert_success(&db,"a","",0,1,B1,false));assert(wifi_known_db_upsert_success(&db,"b","",0,1,B1,false));assert(wifi_known_db_upsert_success(&db,"c","",0,1,B1,false));assert(wifi_known_db_upsert_success(&db,"d","",0,1,B1,false));assert(wifi_known_db_upsert_success(&db,"e","",0,1,B1,false));assert(wifi_known_db_find(&db,"a")<0&&wifi_known_db_find(&db,"e")>=0);assert(wifi_known_db_forget(&db,"c"));assert(wifi_known_db_find(&db,"c")<0);assert(!wifi_known_db_forget(&db,"missing"));assert(wifi_known_db_valid(&db));puts("wifi_known_networks_unit: PASS (codec, corruption, BSSID mobility, eviction, forget)");return 0;}

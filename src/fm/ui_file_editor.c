@@ -49,6 +49,19 @@ typedef struct {
 static ui_editor_state_t s_editor;
 static TickType_t s_cursor_epoch;
 
+#define EDITOR_CARET_HEIGHT \
+    (EDITOR_TEXT_ASCENT + EDITOR_TEXT_DESCENT + 1)
+
+typedef struct {
+    bool valid;
+    bool visible;
+    int16_t x;
+    int16_t y;
+    uint16_t background[EDITOR_CARET_HEIGHT];
+} editor_caret_overlay_t;
+
+static editor_caret_overlay_t s_caret_overlay;
+
 static uint16_t editor_glyph_advance(unsigned char ch)
 {
     if (ch < UI_FONT->first || ch > UI_FONT->last) {
@@ -197,6 +210,60 @@ static void reset_cursor_blink(void)
     s_cursor_epoch = xTaskGetTickCount();
 }
 
+static bool editor_cursor_visible_now(void)
+{
+    TickType_t blink_ticks = pdMS_TO_TICKS(EDITOR_CURSOR_BLINK_MS);
+    return blink_ticks == 0 ||
+        ((xTaskGetTickCount() - s_cursor_epoch) / blink_ticks) % 2 == 0;
+}
+
+static bool editor_caret_position(int16_t *x, int16_t *y)
+{
+    if (x == NULL || y == NULL ||
+        s_editor.cursor_line < s_editor.scroll_y) {
+        return false;
+    }
+
+    uint16_t row = s_editor.cursor_line - s_editor.scroll_y;
+    if (row >= editor_visible_lines()) {
+        return false;
+    }
+
+    const char *line = fm_text_edit_get_line(s_editor.cursor_line);
+    int16_t caret_x = editor_text_x() + editor_columns_pixel_width(
+        line,
+        s_editor.scroll_x,
+        s_editor.cursor_column
+    );
+    int16_t baseline = EDITOR_BODY_BASELINE + row * EDITOR_LINE_HEIGHT;
+    int16_t caret_y = baseline - EDITOR_TEXT_ASCENT;
+
+    if (caret_x < editor_text_x() || caret_x >= DISPLAY_WIDTH ||
+        caret_y < 0 || caret_y + EDITOR_CARET_HEIGHT > DISPLAY_HEIGHT) {
+        return false;
+    }
+
+    *x = caret_x;
+    *y = caret_y;
+    return true;
+}
+
+static void editor_capture_caret_background(
+    const gfx_canvas_t *canvas,
+    int16_t x,
+    int16_t y
+)
+{
+    s_caret_overlay.valid = true;
+    s_caret_overlay.visible = false;
+    s_caret_overlay.x = x;
+    s_caret_overlay.y = y;
+    for (size_t row = 0; row < EDITOR_CARET_HEIGHT; ++row) {
+        s_caret_overlay.background[row] =
+            canvas->buf[(size_t)(y + (int16_t)row) * canvas->width + x];
+    }
+}
+
 static bool editor_start_save(bool exit_after_save)
 {
     if (s_editor.io_pending) {
@@ -221,6 +288,7 @@ static void editor_open_exit_prompt(void)
 void ui_file_editor_init(void)
 {
     memset(&s_editor, 0, sizeof(s_editor));
+    memset(&s_caret_overlay, 0, sizeof(s_caret_overlay));
     fm_text_edit_init();
     reset_cursor_blink();
 }
@@ -228,6 +296,7 @@ void ui_file_editor_init(void)
 void ui_file_editor_open_loaded(void)
 {
     memset(&s_editor, 0, sizeof(s_editor));
+    memset(&s_caret_overlay, 0, sizeof(s_caret_overlay));
     reset_cursor_blink();
 }
 
@@ -406,6 +475,7 @@ void ui_file_editor_draw(gfx_canvas_t *canvas)
         return;
     }
 
+    s_caret_overlay.valid = false;
     gfx_canvas_fill(canvas, GFX_BLACK);
 
     char title[EDITOR_TITLE_MAX];
@@ -446,9 +516,7 @@ void ui_file_editor_draw(gfx_canvas_t *canvas)
     uint16_t visible_columns = editor_visible_columns();
     int16_t text_x = editor_text_x();
 
-    TickType_t blink_ticks = pdMS_TO_TICKS(EDITOR_CURSOR_BLINK_MS);
-    bool cursor_visible = blink_ticks == 0 ||
-        ((xTaskGetTickCount() - s_cursor_epoch) / blink_ticks) % 2 == 0;
+    bool cursor_visible = editor_cursor_visible_now();
 
     for (uint16_t row = 0; row < visible_lines; row++) {
         uint16_t line_index = s_editor.scroll_y + row;
@@ -503,6 +571,8 @@ void ui_file_editor_draw(gfx_canvas_t *canvas)
             );
 
             if (cursor_x >= text_x && cursor_x < DISPLAY_WIDTH) {
+                int16_t cursor_y = baseline - EDITOR_TEXT_ASCENT;
+                editor_capture_caret_background(canvas, cursor_x, cursor_y);
                 gfx_canvas_draw_line(
                     canvas,
                     cursor_x,
@@ -511,7 +581,56 @@ void ui_file_editor_draw(gfx_canvas_t *canvas)
                     baseline + EDITOR_TEXT_DESCENT,
                     GFX_WHITE
                 );
+                s_caret_overlay.visible = true;
             }
         }
     }
+}
+
+esp_err_t ui_file_editor_update_caret(gfx_canvas_t *canvas)
+{
+    if (canvas == NULL || canvas->buf == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    int16_t x;
+    int16_t y;
+    if (!editor_caret_position(&x, &y)) {
+        return ESP_OK;
+    }
+
+    if (!s_caret_overlay.valid || s_caret_overlay.x != x ||
+        s_caret_overlay.y != y) {
+        editor_capture_caret_background(canvas, x, y);
+    }
+
+    bool visible = editor_cursor_visible_now();
+    if (visible == s_caret_overlay.visible) {
+        return ESP_OK;
+    }
+
+    uint16_t pixels[EDITOR_CARET_HEIGHT];
+    for (size_t row = 0; row < EDITOR_CARET_HEIGHT; ++row) {
+        pixels[row] = visible
+            ? GFX_WHITE
+            : s_caret_overlay.background[row];
+    }
+
+    esp_err_t err = display_update_rect(
+        (uint16_t)x,
+        (uint16_t)y,
+        (uint16_t)(x + 1),
+        (uint16_t)(y + EDITOR_CARET_HEIGHT),
+        pixels
+    );
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    for (size_t row = 0; row < EDITOR_CARET_HEIGHT; ++row) {
+        canvas->buf[(size_t)(y + (int16_t)row) * canvas->width + x] =
+            pixels[row];
+    }
+    s_caret_overlay.visible = visible;
+    return ESP_OK;
 }

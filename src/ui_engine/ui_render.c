@@ -7,6 +7,11 @@
 #include "ui_clock.h"
 #include "ui_logo.h"
 #include "ui_keyboard.h"
+#include "ui_wifi_connect.h"
+#include "ui_wifi_monitor.h"
+#include "ui_wifi_map.h"
+#include "ui_wifi_export.h"
+#include "ui_wifi.h"
 #include "ui_popup.h"
 #include "ui_file_editor.h"
 #include <string.h>
@@ -51,9 +56,10 @@ static void draw_worker_status(gfx_canvas_t *canvas)
     int16_t box_width = width + 24;
     int16_t box_x = (DISPLAY_WIDTH - box_width) / 2;
     int16_t box_y = DISPLAY_HEIGHT - 27;
-    gfx_canvas_fill_rect(canvas, box_x + 4, box_y + 4, box_width, 22, 0x0000);
-    gfx_canvas_fill_rect(canvas, box_x, box_y, box_width, 22, 0x1082);
-    gfx_canvas_draw_rect(canvas, box_x, box_y, box_width, 22, 0x8410);
+    gfx_canvas_fill_round_rect(canvas, box_x, box_y, box_width, 22,
+                               3, GFX_BLACK);
+    gfx_canvas_draw_round_rect(canvas, box_x, box_y, box_width, 22,
+                               3, 0x8410);
     gfx_canvas_draw_str(canvas, box_x + 12, box_y + 16, status, UI_FONT, 0xFFFF);
 }
 
@@ -79,6 +85,12 @@ static struct {
 bool ui_render_cursor_is_animating(void)
 {
     if (ui_popup_is_open()) return ui_popup_is_animating();
+    if (ui_wifi_has_focus()) return s_cursor.animating;
+    if (ui_wifi_is_animating()) return true;
+    if (ui_screen_get() == UI_SCREEN_WIFI_NETWORKS)
+        return s_cursor.animating;
+    if (ui_screen_get() == UI_SCREEN_WIFI_MONITOR)
+        return ui_wifi_monitor_cursor_is_animating();
     return s_cursor.animating;
 }
 
@@ -89,8 +101,23 @@ bool ui_render_needs_tick(void)
 {
     if (ui_popup_is_open()) return ui_popup_is_animating();
     if (ui_keyboard_is_open()) return false;
+    if (ui_wifi_has_focus())
+        return s_cursor.animating || ui_wifi_is_animating();
+    if (ui_wifi_is_animating()) return true;
     if (ui_screen_get() == UI_SCREEN_FILE_EDITOR) {
         return ui_file_editor_needs_tick();
+    }
+    if (ui_screen_get() == UI_SCREEN_WIFI_NETWORKS) {
+        return s_cursor.animating || ui_wifi_connect_needs_tick();
+    }
+    if (ui_screen_get() == UI_SCREEN_WIFI_MONITOR) {
+        return ui_wifi_monitor_cursor_is_animating();
+    }
+    if (ui_screen_get() == UI_SCREEN_WIFI_EXPORT) {
+        return s_cursor.animating || ui_wifi_export_needs_tick();
+    }
+    if (ui_screen_get() == UI_SCREEN_WIFI_MAP) {
+        return s_cursor.animating || ui_wifi_map_needs_tick();
     }
     return ui_render_cursor_is_animating() ||
            (ui_screen_get() == UI_SCREEN_FILE_BROWSER && s_name_scroll.active);
@@ -108,6 +135,7 @@ static void place_cursor_on_text(
 )
 {
     if (ui_popup_is_open()) return;
+    if (ui_wifi_has_focus()) return;
     int16_t text_w = gfx_canvas_measure_text_width(UI_FONT, text);
 
     int16_t x = text_x - UI_CURSOR_PAD;
@@ -243,7 +271,7 @@ static void draw_menu_screen(
 
         draw_focus_text(canvas, 10, y, menu->items[i].title, focused);
 
-        if (focused) {
+        if (focused && !ui_wifi_has_focus()) {
             // Курсор ставим именно на выбранный пункт, после того
             // как он уже нарисован — рамка ляжет поверх текста.
             place_cursor_on_text(canvas, 10, y, menu->items[i].title);
@@ -530,6 +558,22 @@ void ui_render(gfx_canvas_t *canvas)
             ui_file_editor_draw(canvas);
             break;
 
+        case UI_SCREEN_WIFI_NETWORKS:
+            ui_wifi_connect_draw(canvas, &s_cursor);
+            break;
+
+        case UI_SCREEN_WIFI_MONITOR:
+            ui_wifi_monitor_draw(canvas);
+            break;
+
+        case UI_SCREEN_WIFI_MAP:
+            ui_wifi_map_draw(canvas, &s_cursor);
+            break;
+
+        case UI_SCREEN_WIFI_EXPORT:
+            ui_wifi_export_draw(canvas, &s_cursor);
+            break;
+
         default: {
             const ui_menu_screen_t *menu = ui_menu_get_screen(screen);
             if (menu != NULL) {
@@ -537,6 +581,14 @@ void ui_render(gfx_canvas_t *canvas)
             }
             break;
         }
+    }
+
+    bool file_screen = screen == UI_SCREEN_FILE_VOLUMES ||
+                       screen == UI_SCREEN_FILE_BROWSER ||
+                       screen == UI_SCREEN_FILE_EDITOR;
+    if (screen != UI_SCREEN_SPLASH && !file_screen &&
+        !ui_keyboard_is_open()) {
+        ui_wifi_draw(canvas, &s_cursor);
     }
 
     // Клавиатура — модальная поверх ВСЕГО, что нарисовано выше.

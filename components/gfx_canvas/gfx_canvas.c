@@ -42,7 +42,14 @@ static void clear_dirty(gfx_canvas_t *c)
 esp_err_t gfx_canvas_init(gfx_canvas_t *canvas, int16_t width, int16_t height)
 {
     memset(canvas, 0, sizeof(*canvas));
-    canvas->buf = heap_caps_malloc((size_t)width * height * sizeof(uint16_t), MALLOC_CAP_DMA);
+    const size_t buffer_size = (size_t)width * height * sizeof(uint16_t);
+    canvas->buf = heap_caps_malloc(
+        buffer_size,
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT
+    );
+    if (canvas->buf == NULL) {
+        canvas->buf = heap_caps_malloc(buffer_size, MALLOC_CAP_8BIT);
+    }
     ESP_RETURN_ON_FALSE(canvas->buf != NULL, ESP_ERR_NO_MEM, TAG,
                          "canvas alloc failed (%dx%d = %d bytes)", width, height,
                          (int)(width * height * sizeof(uint16_t)));
@@ -56,6 +63,12 @@ esp_err_t gfx_canvas_init(gfx_canvas_t *canvas, int16_t width, int16_t height)
 
     clear_dirty(canvas);
     memset(canvas->buf, 0, (size_t)width * height * sizeof(uint16_t));
+    ESP_LOGI(TAG,
+             "canvas=%zu bytes, free internal=%zu, largest DMA=%zu, free PSRAM=%zu",
+             buffer_size,
+             heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+             heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL),
+             heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
     return ESP_OK;
 }
 
@@ -73,6 +86,16 @@ void gfx_canvas_fill(gfx_canvas_t *c, uint16_t color)
 {
     size_t n = (size_t)c->width * c->height;
     for (size_t i = 0; i < n; i++) c->buf[i] = color;
+    mark_dirty(c, 0, 0, c->width, c->height);
+}
+
+void gfx_canvas_dim(gfx_canvas_t *c)
+{
+    if (c == NULL || c->buf == NULL) return;
+    size_t count = (size_t)c->width * c->height;
+    for (size_t i = 0; i < count; ++i) {
+        c->buf[i] = (uint16_t)((c->buf[i] & 0xF7DEU) >> 1U);
+    }
     mark_dirty(c, 0, 0, c->width, c->height);
 }
 
@@ -102,6 +125,92 @@ void gfx_canvas_draw_rect(gfx_canvas_t *c, int16_t x, int16_t y, int16_t w, int1
     gfx_canvas_fill_rect(c, x, y + h - 1, w, 1, color);
     gfx_canvas_fill_rect(c, x, y, 1, h, color);
     gfx_canvas_fill_rect(c, x + w - 1, y, 1, h, color);
+}
+
+static int16_t clamp_round_radius(int16_t w, int16_t h, int16_t radius)
+{
+    if (radius < 0) radius = 0;
+    int16_t min_size = w < h ? w : h;
+    int16_t max_radius = min_size > 0 ? (int16_t)((min_size - 1) / 2) : 0;
+    return radius > max_radius ? max_radius : radius;
+}
+
+void gfx_canvas_fill_round_rect(gfx_canvas_t *c, int16_t x, int16_t y,
+                                int16_t w, int16_t h, int16_t radius,
+                                uint16_t color)
+{
+    if (c == NULL || w <= 0 || h <= 0) return;
+    radius = clamp_round_radius(w, h, radius);
+    if (radius == 0) {
+        gfx_canvas_fill_rect(c, x, y, w, h, color);
+        return;
+    }
+
+    int16_t right_center = (int16_t)(x + w - radius - 1);
+    int16_t bottom_center = (int16_t)(y + h - radius - 1);
+    gfx_canvas_fill_rect(c, x + radius, y, w - 2 * radius, h, color);
+    gfx_canvas_fill_rect(c, x, y + radius, w, h - 2 * radius, color);
+    gfx_canvas_fill_circle(c, x + radius, y + radius, radius, color);
+    gfx_canvas_fill_circle(c, right_center, y + radius, radius, color);
+    gfx_canvas_fill_circle(c, x + radius, bottom_center, radius, color);
+    gfx_canvas_fill_circle(c, right_center, bottom_center, radius, color);
+}
+
+void gfx_canvas_draw_round_rect(gfx_canvas_t *c, int16_t x, int16_t y,
+                                int16_t w, int16_t h, int16_t radius,
+                                uint16_t color)
+{
+    if (c == NULL || w <= 0 || h <= 0) return;
+    radius = clamp_round_radius(w, h, radius);
+    if (radius == 0) {
+        gfx_canvas_draw_rect(c, x, y, w, h, color);
+        return;
+    }
+
+    int16_t right = (int16_t)(x + w - 1);
+    int16_t bottom = (int16_t)(y + h - 1);
+    int16_t left_center = (int16_t)(x + radius);
+    int16_t right_center = (int16_t)(right - radius);
+    int16_t top_center = (int16_t)(y + radius);
+    int16_t bottom_center = (int16_t)(bottom - radius);
+
+    gfx_canvas_draw_line(c, left_center, y, right_center, y, color);
+    gfx_canvas_draw_line(c, left_center, bottom, right_center, bottom, color);
+    gfx_canvas_draw_line(c, x, top_center, x, bottom_center, color);
+    gfx_canvas_draw_line(c, right, top_center, right, bottom_center, color);
+
+    int16_t f = (int16_t)(1 - radius);
+    int16_t dd_f_x = 1;
+    int16_t dd_f_y = (int16_t)(-2 * radius);
+    int16_t arc_x = 0;
+    int16_t arc_y = radius;
+    while (arc_x < arc_y) {
+        if (f >= 0) {
+            --arc_y;
+            dd_f_y = (int16_t)(dd_f_y + 2);
+            f = (int16_t)(f + dd_f_y);
+        }
+        ++arc_x;
+        dd_f_x = (int16_t)(dd_f_x + 2);
+        f = (int16_t)(f + dd_f_x);
+
+        gfx_canvas_draw_pixel(c, left_center - arc_x,
+                              top_center - arc_y, color);
+        gfx_canvas_draw_pixel(c, left_center - arc_y,
+                              top_center - arc_x, color);
+        gfx_canvas_draw_pixel(c, right_center + arc_x,
+                              top_center - arc_y, color);
+        gfx_canvas_draw_pixel(c, right_center + arc_y,
+                              top_center - arc_x, color);
+        gfx_canvas_draw_pixel(c, left_center - arc_x,
+                              bottom_center + arc_y, color);
+        gfx_canvas_draw_pixel(c, left_center - arc_y,
+                              bottom_center + arc_x, color);
+        gfx_canvas_draw_pixel(c, right_center + arc_x,
+                              bottom_center + arc_y, color);
+        gfx_canvas_draw_pixel(c, right_center + arc_y,
+                              bottom_center + arc_x, color);
+    }
 }
 
 void gfx_canvas_draw_line(gfx_canvas_t *c, int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color)
@@ -295,23 +404,17 @@ esp_err_t gfx_canvas_flush(gfx_canvas_t *c)
     }
 
     int16_t x0 = c->dirty_x0, y0 = c->dirty_y0, x1 = c->dirty_x1, y1 = c->dirty_y1;
-    int16_t w = x1 - x0;
+    esp_err_t err = display_draw_bitmap_stride(
+        x0,
+        y0,
+        x1,
+        y1,
+        &c->buf[(int32_t)y0 * c->width + x0],
+        (size_t)c->width
+    );
 
-    esp_err_t err;
-    if (x0 == 0 && x1 == c->width) {
-        // Используем display_draw_bitmap вместо несуществующего display_flush
-        err = display_draw_bitmap(x0, y0, x1, y1, &c->buf[(int32_t)y0 * c->width]);
-    } else {
-        uint16_t *scratch = heap_caps_malloc((size_t)w * (y1 - y0) * sizeof(uint16_t), MALLOC_CAP_DMA);
-        if (!scratch) return ESP_ERR_NO_MEM;
-        for (int16_t yy = y0; yy < y1; yy++) {
-            memcpy(&scratch[(yy - y0) * w], &c->buf[(int32_t)yy * c->width + x0], w * sizeof(uint16_t));
-        }
-        // Используем display_draw_bitmap
-        err = display_draw_bitmap(x0, y0, x1, y1, scratch);
-        free(scratch);
+    if (err == ESP_OK) {
+        clear_dirty(c);
     }
-
-    clear_dirty(c);
     return err;
 }

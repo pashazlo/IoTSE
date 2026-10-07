@@ -15,7 +15,6 @@ static const menu_item_t main_menu[] = {
     {"RF (Sub-GHz)", action_rf},
     {"NRF24",        action_nrf},
     {"Wi-Fi",        action_wifi},
-    {"Bluetooth",    action_bt},
     {"Settings",     action_settings},
 };
 
@@ -27,10 +26,11 @@ static const menu_item_t ir_menu[] = {
 };
 
 static const menu_item_t wifi_menu[] = {
-    {"Scan",     NULL},
-    {"Networks", NULL},
-    {"Settings", NULL},
-    {"< BACK",   action_back_to_main},
+    {"Networks",     action_wifi_connect},
+    {"Air Monitor",  action_wifi_monitor},
+    {"Embedded MAP", action_wifi_map},
+    {"Export PCAP",  action_wifi_export},
+    {"< BACK",       action_back_to_main},
 };
 
 static const menu_item_t rf_menu[] = {
@@ -45,13 +45,6 @@ static const menu_item_t nrf_menu[] = {
     {"Transmitter", NULL},
     {"Settings",    NULL},
     {"< BACK",      action_back_to_main},
-};
-
-static const menu_item_t bt_menu[] = {
-    {"Scan",     NULL},
-    {"Devices",  NULL},
-    {"Settings", NULL},
-    {"< BACK",   action_back_to_main},
 };
 
 static const menu_item_t settings_menu[] = {
@@ -106,13 +99,6 @@ static const ui_menu_screen_t s_screens[UI_SCREEN_COUNT] = {
         .header   = "Wi-Fi",
         .items    = wifi_menu,
         .count    = sizeof(wifi_menu) / sizeof(wifi_menu[0]),
-    },
-
-    [UI_SCREEN_BT_MENU] = {
-        .focus_id = UI_FOCUS_BT,
-        .header   = "Bluetooth",
-        .items    = bt_menu,
-        .count    = sizeof(bt_menu) / sizeof(bt_menu[0]),
     },
 
     [UI_SCREEN_SETTINGS_MENU] = {

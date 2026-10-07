@@ -5,6 +5,7 @@
 
 #include "esp_log.h"
 #include "esp_check.h"
+#include "driver/gpio.h"
 
 static const char *TAG = "SPI_BUS";
 
@@ -37,6 +38,25 @@ esp_err_t spi_bus_shared_init(void)
         return ESP_ERR_NO_MEM;
     }
 
+    /* Keep every slave deselected before SCK starts toggling. This matters on
+     * a shared bus during boot, before the display and SD drivers own CS. */
+    gpio_config_t cs_config = {
+        .pin_bit_mask = (1ULL << SPI_BUS_DISPLAY_CS_GPIO) |
+                        (1ULL << SPI_BUS_SD_CS_GPIO),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    esp_err_t err = gpio_config(&cs_config);
+    if (err != ESP_OK) {
+        vSemaphoreDelete(s_spi_mutex);
+        s_spi_mutex = NULL;
+        return err;
+    }
+    gpio_set_level(SPI_BUS_DISPLAY_CS_GPIO, 1);
+    gpio_set_level(SPI_BUS_SD_CS_GPIO, 1);
+
     spi_bus_config_t buscfg = {
         .sclk_io_num = SPI_BUS_SCK_GPIO,
         .mosi_io_num = SPI_BUS_MOSI_GPIO,
@@ -46,7 +66,7 @@ esp_err_t spi_bus_shared_init(void)
         .max_transfer_sz = SPI_BUS_MAX_TRANSFER_SZ,
     };
 
-    esp_err_t err = spi_bus_initialize(SHARED_SPI_HOST, &buscfg, SPI_DMA_CH_AUTO);
+    err = spi_bus_initialize(SHARED_SPI_HOST, &buscfg, SPI_DMA_CH_AUTO);
 
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "spi_bus_initialize failed: %s", esp_err_to_name(err));
@@ -56,6 +76,7 @@ esp_err_t spi_bus_shared_init(void)
     }
 
     s_bus_initialized = true;
+    (void)gpio_pullup_en(SPI_BUS_MISO_GPIO);
 
     ESP_LOGI(TAG, "SPI bus initialized on host %d (SCK=%d, MOSI=%d, MISO=%d)",
              SHARED_SPI_HOST, SPI_BUS_SCK_GPIO, SPI_BUS_MOSI_GPIO, SPI_BUS_MISO_GPIO);

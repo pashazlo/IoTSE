@@ -443,6 +443,12 @@ static esp_err_t send_command(const fm_worker_cmd_t *cmd)
     return ESP_OK;
 }
 
+static bool command_name_is_valid(const char *name)
+{
+    return name != NULL && name[0] != '\0' &&
+           strnlen(name, FM_MAX_NAME_LEN) < FM_MAX_NAME_LEN;
+}
+
 
 // ============================================================================
 // Public command API
@@ -462,7 +468,7 @@ esp_err_t fm_worker_send_enter_volume(uint8_t volume_index)
 
 esp_err_t fm_worker_send_enter_dir(const char *name)
 {
-    if (name == NULL) {
+    if (!command_name_is_valid(name)) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -496,7 +502,7 @@ esp_err_t fm_worker_send_go_up(void)
 
 esp_err_t fm_worker_send_create_file(const char *name)
 {
-    if (name == NULL) {
+    if (!command_name_is_valid(name)) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -520,7 +526,7 @@ esp_err_t fm_worker_send_create_file(const char *name)
 
 esp_err_t fm_worker_send_create_dir(const char *name)
 {
-    if (name == NULL) {
+    if (!command_name_is_valid(name)) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -547,7 +553,7 @@ esp_err_t fm_worker_send_delete(
     bool is_dir
 )
 {
-    if (name == NULL) {
+    if (!command_name_is_valid(name)) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -576,7 +582,8 @@ esp_err_t fm_worker_send_rename(
     const char *new_name
 )
 {
-    if (old_name == NULL || new_name == NULL) {
+    if (!command_name_is_valid(old_name) ||
+        !command_name_is_valid(new_name)) {
         return ESP_ERR_INVALID_ARG;
     }
 
