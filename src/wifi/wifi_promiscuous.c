@@ -17,6 +17,10 @@ typedef struct {
     uint8_t mcs;
     bool bandwidth_40mhz;
     bool short_gi;
+    /* Фаза 2: кадр с битым FCS (только при WIFI_PROMISCUOUS_CAPTURE_FCS_FAIL).
+     * Занимает байт выравнивания, который и так был перед enum `type`, поэтому
+     * sizeof(ingress_slot_t) НЕ изменился и остаётся 4112 (см. static_assert). */
+    bool fcs_bad;
     wifi_promiscuous_pkt_type_t type;
     wifi_target_diag_kind_t target_diag;
     uint8_t payload[WIFI_PROMISCUOUS_CAPTURE_MAX_LEN];
@@ -177,14 +181,33 @@ void wifi_promiscuous_rx_cb(
 #else
     wifi_target_diag_kind_t target = WIFI_TARGET_DIAG_NONE;
 #endif
-    if (packet->rx_ctrl.rx_state != 0 ||
-        packet->rx_ctrl.sig_len <= WIFI_PROMISCUOUS_FCS_LEN) {
+    /* Кадр без полезных байтов (sig_len не больше одного FCS) распарсить
+     * нельзя ни при каких условиях — всегда отбрасываем как invalid. */
+    if (packet->rx_ctrl.sig_len <= WIFI_PROMISCUOUS_FCS_LEN) {
 #if WIFI_PROMISCUOUS_TARGET_DIAGNOSTICS
         count_target(target, DIAG_INVALID);
 #endif
         atomic_fetch_add_explicit(&s_dropped_invalid, 1,
                                   memory_order_relaxed);
         return;
+    }
+    /* rx_ctrl.rx_state != 0 — ошибка приёма, как правило битый FCS.
+     * Поведение по умолчанию (Фаза 2 выключена): отбрасываем как раньше.
+     * При включённой Фазе 2: не выбрасываем, а помечаем флагом fcs_bad и
+     * пропускаем дальше. Границы длины проверяются ниже (oversize-guard), так
+     * что «грязный» кадр не приведёт к выходу memcpy за пределы слота. */
+    bool fcs_bad = false;
+    if (packet->rx_ctrl.rx_state != 0) {
+#if WIFI_PROMISCUOUS_CAPTURE_FCS_FAIL
+        fcs_bad = true;
+#else
+#if WIFI_PROMISCUOUS_TARGET_DIAGNOSTICS
+        count_target(target, DIAG_INVALID);
+#endif
+        atomic_fetch_add_explicit(&s_dropped_invalid, 1,
+                                  memory_order_relaxed);
+        return;
+#endif
     }
     const uint16_t driver_length = packet->rx_ctrl.sig_len;
     const uint16_t frame_length = driver_length - WIFI_PROMISCUOUS_FCS_LEN;
@@ -219,6 +242,7 @@ void wifi_promiscuous_rx_cb(
     slot->mcs = packet->rx_ctrl.mcs;
     slot->bandwidth_40mhz = packet->rx_ctrl.cwb != 0;
     slot->short_gi = packet->rx_ctrl.sgi != 0;
+    slot->fcs_bad = fcs_bad; /* Фаза 2: см. выше, при выключенной фазе всегда false. */
     slot->type = type;
     slot->target_diag = target;
     memcpy(slot->payload, packet->payload, frame_length);
@@ -258,7 +282,8 @@ bool wifi_promiscuous_receive_wait(wifi_raw_packet_t *out_packet,
         .rssi = slot->rssi, .channel = slot->channel,
         .legacy_rate = slot->legacy_rate, .sig_mode = slot->sig_mode,
         .mcs = slot->mcs, .bandwidth_40mhz = slot->bandwidth_40mhz,
-        .short_gi = slot->short_gi, .type = slot->type,
+        .short_gi = slot->short_gi, .fcs_bad = slot->fcs_bad,
+        .type = slot->type,
         .target_diag = slot->target_diag,
         .payload = slot->payload, .ingress_slot = index,
     };

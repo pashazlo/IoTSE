@@ -75,3 +75,6 @@ sdkconfig.json
 
 # Dependencies
 managed_components/
+
+# Agent harness workspace (local only)
+.claude/

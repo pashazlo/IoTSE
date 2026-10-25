@@ -797,11 +797,16 @@ void ui_popup_draw(gfx_canvas_t *c)
     /* Actual cross, independent of font glyph support. */
     gfx_canvas_draw_line(c, 268, 27, 278, 37, 0xFFFF);
     gfx_canvas_draw_line(c, 278, 27, 268, 37, 0xFFFF);
-    char label[15];
-    strncpy(label, s_name, sizeof(label) - 1);
-    label[sizeof(label) - 1] = '\0';
-    if (strlen(s_name) > 14) { label[11] = '.'; label[12] = '.'; label[13] = '.'; }
-    gfx_canvas_draw_str(c, 44, 59, label, POPUP_FONT, 0xBDF7);
+    /* Строку имени рисуем ТОЛЬКО для файлового/delete-popup. У ошибки имени нет:
+     * s_name — общий статик и хранит последний открытый файл/сеть, поэтому раньше
+     * ошибка (напр. «PMKID queue busy») показывала чужое имя. */
+    if (!s_error) {
+        char label[15];
+        strncpy(label, s_name, sizeof(label) - 1);
+        label[sizeof(label) - 1] = '\0';
+        if (strlen(s_name) > 14) { label[11] = '.'; label[12] = '.'; label[13] = '.'; }
+        gfx_canvas_draw_str(c, 44, 59, label, POPUP_FONT, 0xBDF7);
+    }
     if (s_error) {
         draw_clipped_text(c, 44, 278, 88, s_error_text, 0, 0xFFFF);
         gfx_canvas_draw_str(c, 44, 120, "SELECT: close", POPUP_FONT, 0xBDF7);

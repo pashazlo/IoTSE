@@ -78,7 +78,26 @@ static void set_state(wifi_worker_state_t v){int old=atomic_exchange_explicit(&s
 static wifi_conn_auto_runtime_t auto_runtime(void){switch(state()){case WIFI_WORKER_STATE_OFF:return WIFI_CONN_AUTO_RUNTIME_OFF;case WIFI_WORKER_STATE_ERROR:return WIFI_CONN_AUTO_RUNTIME_ERROR;case WIFI_WORKER_STATE_IDLE:return WIFI_CONN_AUTO_RUNTIME_IDLE;case WIFI_WORKER_STATE_RETRY_WAIT:return WIFI_CONN_AUTO_RUNTIME_RETRY_WAIT;default:return WIFI_CONN_AUTO_RUNTIME_BUSY;}}
 static const char*phase_name(wifi_worker_state_t v){switch(v){case WIFI_WORKER_STATE_OFF:return"OFF";case WIFI_WORKER_STATE_STARTING:return"STARTING";case WIFI_WORKER_STATE_IDLE:return"IDLE";case WIFI_WORKER_STATE_SCANNING:return"SCANNING";case WIFI_WORKER_STATE_ASSOCIATING:return"ASSOCIATING";case WIFI_WORKER_STATE_WAITING_IP:return"WAITING_IP";case WIFI_WORKER_STATE_RETRY_WAIT:return"RETRY_WAIT";case WIFI_WORKER_STATE_DISCONNECTING:return"DISCONNECTING";case WIFI_WORKER_STATE_SWITCHING_NETWORK:return"SWITCHING_NETWORK";case WIFI_WORKER_STATE_CONNECTED:return"CONNECTED";case WIFI_WORKER_STATE_PROMISCUOUS:return"PROMISCUOUS";case WIFI_WORKER_STATE_STOPPING:return"STOPPING";case WIFI_WORKER_STATE_ERROR:return"ERROR";default:return"UNKNOWN";}}
 static bool any_auto(void){for(unsigned i=0;i<WIFI_KNOWN_NETWORK_MAX;i++)if(s_known.entries[i].occupied&&s_known.entries[i].auto_connect)return true;return false;}
-static bool auto_allowed(void){return any_auto()&&!s_user_suppressed&&!atomic_load_explicit(&s_auto_suspended,memory_order_acquire)&&wifi_conn_sm_can_auto(&s_sm);}
+
+/* ВРЕМЕННЫЙ выключатель автоподключения.
+ *   0 = авто ВЫКЛ (сейчас). Сохранённые сети, пароли и их флаги `auto` в NVS
+ *       остаются нетронутыми и помнятся; ручной коннект работает. Воркер просто
+ *       НИКОГДА не запускает авто-скан/коннект сам. Это и чинит вход в Air
+ *       Monitor: ENABLE_PROMISCUOUS требует состояние IDLE, а авто держало радио
+ *       занятым (SCANNING/CONNECTING/RETRY_WAIT) → "start capture failed".
+ *   1 = прежнее поведение (авто включено). Поменяй на 1, чтобы вернуть.
+ * Один рубильник в единственной точке разрешения авто — auto_allowed(). */
+#ifndef WIFI_AUTO_CONNECT_ENABLED
+#define WIFI_AUTO_CONNECT_ENABLED 0
+#endif
+
+static bool auto_allowed(void){
+#if WIFI_AUTO_CONNECT_ENABLED
+    return any_auto()&&!s_user_suppressed&&!atomic_load_explicit(&s_auto_suspended,memory_order_acquire)&&wifi_conn_sm_can_auto(&s_sm);
+#else
+    return false; /* авто временно выключено — см. WIFI_AUTO_CONNECT_ENABLED */
+#endif
+}
 static void refresh_channels(void){uint8_t a,b;if(wifi_radio_get_channel_range(&a,&b)==ESP_OK){atomic_store(&s_first_channel,a);atomic_store(&s_last_channel,b);}}
 static void publish_policy_snapshots(void){if(s_mutex&&xSemaphoreTake(s_mutex,portMAX_DELAY)==pdTRUE){s_known_snapshot=s_known;s_sm_snapshot=s_sm;xSemaphoreGive(s_mutex);}}
 static void publish_connection(bool connected){wifi_connection_info_t info={0};if(connected&&wifi_radio_get_connection_info(&info)!=ESP_OK)connected=false;info.connected=connected;if(xSemaphoreTake(s_mutex,portMAX_DELAY)==pdTRUE){s_connection_snapshot.info=info;s_connection_snapshot.generation++;xSemaphoreGive(s_mutex);}}

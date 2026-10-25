@@ -24,6 +24,7 @@ typedef struct {
     uint32_t dropped_oversize;
     uint32_t corruption_resets;
     uint32_t save_busy_count;
+    uint32_t eapol_evicted;
     uint32_t correlation_id;
     uint64_t next_sequence;
     bool frozen;

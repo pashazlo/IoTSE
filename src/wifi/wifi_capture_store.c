@@ -78,6 +78,7 @@ static uint32_t s_dropped_frozen;
 static uint32_t s_dropped_oversize;
 static uint32_t s_corruption_resets;
 static uint32_t s_save_busy_count;
+static uint32_t s_eapol_evicted;
 
 static uint32_t align4(uint32_t value)
 {
@@ -135,6 +136,7 @@ static bool evict_one(capture_bank_t *bank)
     --bank->count;
     ++s_overwritten_records;
     s_overwritten_bytes += record.stored_size;
+    if ((record.flags & RECORD_FLAG_EAPOL) != 0U) ++s_eapol_evicted;
     return true;
 }
 
@@ -160,7 +162,7 @@ static void cleanup_partial_init(void)
     s_overwritten_records = s_overwritten_bytes = 0U;
     atomic_store_explicit(&s_dropped_busy, 0U, memory_order_release);
     s_dropped_frozen = s_dropped_oversize = s_corruption_resets = 0U;
-    s_save_busy_count = 0U;
+    s_save_busy_count = s_eapol_evicted = 0U;
 }
 
 static esp_err_t next_path(char out[CAPTURE_PATH_SIZE])
@@ -334,7 +336,7 @@ void wifi_capture_store_reset(void)
         atomic_store_explicit(&s_dropped_busy, 0U, memory_order_release);
         s_dropped_frozen = s_dropped_oversize = 0U;
         s_corruption_resets = 0U;
-        s_save_busy_count = 0U;
+        s_save_busy_count = s_eapol_evicted = 0U;
         xSemaphoreGive(s_mutex);
     }
 }
@@ -458,6 +460,7 @@ bool wifi_capture_store_get_snapshot(wifi_capture_store_snapshot_t *out)
         .dropped_oversize = s_dropped_oversize,
         .corruption_resets = s_corruption_resets,
         .save_busy_count = s_save_busy_count,
+        .eapol_evicted = s_eapol_evicted,
         .correlation_id = s_correlation_id,
         .next_sequence = s_next_sequence,
         .frozen = s_frozen,

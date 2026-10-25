@@ -25,6 +25,7 @@ set(SRCS
     "ui_engine/ui_wifi_monitor.c"
     "ui_engine/ui_wifi_map.c"
     "ui_engine/ui_wifi_export.c"
+    "ui_engine/ui_wifi_tx.c"
     "ui_engine/widgets/ui_battery.c"
     "ui_engine/widgets/ui_clock.c"
     "ui_engine/widgets/ui_logo.c"
@@ -49,6 +50,10 @@ set(SRCS
     "wifi/wifi_ie_iterator.c"
     "wifi/wifi_mgmt_parser.c"
     "wifi/wifi_rsn_parser.c"
+    "wifi/wifi_pmkid_parser.c"
+    "wifi/wifi_pmkid_store_core.c"
+    "wifi/wifi_pmkid_store.c"
+    "wifi/wifi_pmkid_writer.c"
     "wifi/wifi_scan_lifecycle.c"
     "wifi/wifi_sta_tracker.c"
     "wifi/wifi_sta_tracker_core.c"
@@ -61,7 +66,17 @@ set(SRCS
     "wifi/wifi_port_scan.c"
     "wifi/wifi_worker.c"
 
+    "wifi/tx/tx_hal_80211.c"
+    "wifi/tx/tx_frame_builder.c"
+    "wifi/tx/tx_engine.c"
+    "wifi/tx/tx_pmkid_select.c"
+    "wifi/tx/tx_config.c"
+
+    "wifi/portal/portal_softap.c"
+
     "subghz/subghz_rs_math.c"
+    "subghz/subghz_hal_cc1101.c"
+    "subghz/subghz_rmt_raw.c"
 )
 
 idf_component_register(
@@ -79,6 +94,8 @@ idf_component_register(
         "fm/include"
         "wifi"
         "wifi/include"
+        "wifi/tx/include"
+        "wifi/portal/include"
         "subghz"
         "subghz/include"
     REQUIRES
@@ -87,6 +104,9 @@ idf_component_register(
         gfx_canvas
         spi_bus
         driver
+        esp_driver_gpio
+        esp_driver_rmt
+        esp_driver_spi
         freertos
         nvs_flash
         fatfs
@@ -101,7 +121,7 @@ idf_component_register(
         sdmmc
         lwip
 )
-
+target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--allow-multiple-definition")
 # Keep printf-family diagnostics strict for IoTSE-owned production sources.
 # In particular this catches malformed PRI macros before firmware reaches HW.
 target_compile_options(${COMPONENT_LIB} PRIVATE

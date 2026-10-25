@@ -69,10 +69,22 @@ wifi_eapol_parse_status_t wifi_eapol_parse(const uint8_t *bytes, size_t length,
 wifi_eapol_message_t wifi_eapol_classify(
     const wifi_eapol_info_t *k, wifi_frame_direction_t direction)
 {
+    /* descriptor_version = key_info & 0x7. Допустимые значения 0..3, и раньше
+     * ноль ошибочно отвергался — из-за этого НЕ распознавались современные
+     * рукопожатия:
+     *   0 = алгоритм MIC задаётся выбранным AKM, а не этим полем. Так работают
+     *       WPA3-SAE, 802.11w/PMF и SHA-256-AKM — у них версия именно 0.
+     *   1 = HMAC-MD5 + ARC4   (старый WPA/TKIP)
+     *   2 = HMAC-SHA1-128 + AES (обычный WPA2/CCMP)
+     *   3 = AES-128-CMAC + SHA-256
+     * Поэтому разрешаем 0..3 (режем только >3, т.к. это не валидный key_info).
+     * Это лишь РАСШИРЯЕТ распознавание: все остальные проверки ниже (pairwise,
+     * направление, флаги key_ack/key_mic/install/secure) остаются строгими, так
+     * что ложных M1..M4 из посторонних кадров не появится. */
     if (k == NULL || k->status != WIFI_EAPOL_PARSE_OK || !k->is_key ||
         !k->key_fields_valid || !k->descriptor_supported || !k->pairwise ||
         (k->protocol_version != 1U && k->protocol_version != 2U) ||
-        k->descriptor_version < 1U || k->descriptor_version > 3U ||
+        k->descriptor_version > 3U ||
         k->request || k->error)
         return WIFI_EAPOL_MESSAGE_UNKNOWN;
 
@@ -87,9 +99,19 @@ wifi_eapol_message_t wifi_eapol_classify(
     if (direction == WIFI_FRAME_DIRECTION_AP_TO_STA && k->key_ack &&
         k->key_mic && k->install && k->secure)
         return WIFI_EAPOL_MESSAGE_M3;
+    /* M4 отличается от M2 ТОЛЬКО битом secure (M2: !secure, M4: secure), а M2
+     * проверяется выше — пересечения нет. Раньше здесь дополнительно стояло
+     * строгое k->key_data_length == 0U: по стандарту у M4 key data пустой, но на
+     * практике некоторые supplicant'ы кладут в M4 ненулевые (иногда padding)
+     * key data, и такой кадр ошибочно уходил в UNKNOWN. Убрали это условие, и
+     * распознавание M4 расширилось. Ложные срабатывания при этом невозможны:
+     *   - выше (строка с проверкой k->pairwise) group-key handshake уже отсечён,
+     *     поэтому единственный pairwise STA->AP secure-кадр с MIC и без install —
+     *     это и есть M4;
+     *   - !encrypted_key_data оставляем строгим, чтобы не принимать кадр с
+     *     зашифрованными key data как M4. */
     if (direction == WIFI_FRAME_DIRECTION_STA_TO_AP && !k->key_ack &&
-        k->key_mic && !k->install && k->secure && !k->encrypted_key_data &&
-        k->key_data_length == 0U)
+        k->key_mic && !k->install && k->secure && !k->encrypted_key_data)
         return WIFI_EAPOL_MESSAGE_M4;
     return WIFI_EAPOL_MESSAGE_UNKNOWN;
 }

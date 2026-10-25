@@ -14,6 +14,9 @@
 #include "wifi_ap_tracker.h"
 #include "wifi_eapol_parser.h"
 #include "wifi_eapol_tracker.h"
+#include "wifi_pmkid_parser.h"
+#include "wifi_pmkid_store.h"
+#include "wifi_pmkid_writer.h"
 #include "wifi_frame_parser.h"
 #include "wifi_mgmt_parser.h"
 #include "wifi_promiscuous.h"
@@ -85,6 +88,7 @@ static void update_diagnostics(int64_t now, uint64_t *previous_rx,
             .ring_high_water_records = ring.high_water_records,
             .overwritten_records = ring.overwritten_records,
             .overwritten_bytes = ring.overwritten_bytes,
+            .eapol_evicted = ring.eapol_evicted,
             .dropped_busy = ring.dropped_busy,
             .dropped_frozen = ring.dropped_frozen,
             .dropped_oversize = ring.dropped_oversize,
@@ -107,23 +111,25 @@ static void update_diagnostics(int64_t now, uint64_t *previous_rx,
     if (wifi_worker_get_state() != WIFI_WORKER_STATE_PROMISCUOUS) return;
     ESP_LOGI(TAG,
              "RX=%" PRIu32 "/s Q=%" PRIu32 "/%u HWM=%" PRIu32
-             " DROP=%" PRIu32 "(FULL=%" PRIu32 " OVER=%" PRIu32
-             " INVALID=%" PRIu32 ") CH=%u MODE=%s RING=%" PRIu32
-             "KB/%uKB OVERWRITE=%" PRIu32 " WRITER=%s PSRAM=%zu"
-             " HEAP=%zu AP=%u/%u EVI=%" PRIu64 " AP_BAD=%" PRIu64
-             " STA=%u/%u STA_EVI=%" PRIu64 " AMBIG=%" PRIu64,
-             rate, ingress.queue_current, WIFI_PROMISCUOUS_QUEUE_LEN,
-             ingress.queue_high_water, ingress.dropped, ingress.dropped_full,
-             ingress.dropped_oversize, ingress.dropped_invalid,
-             engine.current_channel,
-             engine.mode == WIFI_CHANNEL_MODE_SURVEY ? "SURVEY" : "FIXED",
-             ring.used_bytes / 1024U, WIFI_CAPTURE_BANK_BYTES / 1024U,
-             ring.overwritten_records, ring.saving ? "BUSY" : "IDLE",
-             heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
-             heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-             ap.table_count, ap.table_capacity, ap.ap_evicted,
-             ap.malformed_ignored, sta.table_count, sta.table_capacity,
-             sta.sta_evicted, sta.ambiguous_relation_count);
+" DROP=%" PRIu32 "(FULL=%" PRIu32 " OVER=%" PRIu32
+              " INVALID=%" PRIu32 ") CH=%u MODE=%s RING=%" PRIu32
+              "KB/%uKB OVERWRITE=%" PRIu32 " EAPOL_EVICT=%" PRIu32
+              " WRITER=%s PSRAM=%zu"
+              " HEAP=%zu AP=%u/%u EVI=%" PRIu64 " AP_BAD=%" PRIu64
+              " STA=%u/%u STA_EVI=%" PRIu64 " AMBIG=%" PRIu64,
+              rate, ingress.queue_current, WIFI_PROMISCUOUS_QUEUE_LEN,
+              ingress.queue_high_water, ingress.dropped, ingress.dropped_full,
+              ingress.dropped_oversize, ingress.dropped_invalid,
+              engine.current_channel,
+              engine.mode == WIFI_CHANNEL_MODE_SURVEY ? "SURVEY" : "FIXED",
+              ring.used_bytes / 1024U, WIFI_CAPTURE_BANK_BYTES / 1024U,
+              ring.overwritten_records, ring.eapol_evicted,
+              ring.saving ? "BUSY" : "IDLE",
+              heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+              heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+              ap.table_count, ap.table_capacity, ap.ap_evicted,
+              ap.malformed_ignored, sta.table_count, sta.table_capacity,
+              sta.sta_evicted, sta.ambiguous_relation_count);
     if (target.enabled) {
         ESP_LOGI(TAG,
                  "TARGET AP cb=%" PRIu64 " bcn=%" PRIu64 " auth=%" PRIu64
@@ -224,17 +230,40 @@ static void analyzer_task(void *unused)
                 wifi_frame_direction_t direction;
                 if (wifi_frame_get_infrastructure_roles(&info, bssid, sta,
                                                         &direction)) {
+                    wifi_eapol_message_t msg =
+                        wifi_eapol_classify(&eapol, direction);
                     wifi_eapol_observation_t observation = {
                         .direction = direction,
                         .channel = info.channel,
                         .rssi = info.rssi,
                         .timestamp_us = now,
                         .eapol = &eapol,
-                        .message = wifi_eapol_classify(&eapol, direction),
+                        .message = msg,
                     };
                     memcpy(observation.bssid, bssid, sizeof(bssid));
                     memcpy(observation.sta, sta, sizeof(sta));
                     (void)wifi_eapol_tracker_observe(&observation);
+
+                    /* PMKID живёт в НЕзашифрованном Key Data именно M1, поэтому
+                     * пробуем извлекать только на M1. Нашли — кладём в store
+                     * (он сам отсеет дубликаты). SSID здесь не заполняем: его
+                     * подставит писатель при экспорте по BSSID из ap_tracker. */
+                    if (msg == WIFI_EAPOL_MESSAGE_M1) {
+                        wifi_pmkid_record_t rec = {0};
+                        if (wifi_pmkid_extract_from_eapol(
+                                packet.payload + info.eapol_offset,
+                                info.eapol_length, rec.pmkid)) {
+                            memcpy(rec.bssid, bssid, sizeof(rec.bssid));
+                            memcpy(rec.sta, sta, sizeof(rec.sta));
+                            rec.rssi = info.rssi;
+                            rec.ts_us = now;
+                            /* Только НОВЫЙ уникальный PMKID отдаём писателю на SD
+                             * (store сам отсеивает дубли), чтобы файл не пух. */
+                            if (wifi_pmkid_store_observe(&rec)) {
+                                (void)wifi_pmkid_writer_submit(&rec);
+                            }
+                        }
+                    }
                 }
             }
             wifi_mgmt_info_t mgmt;
@@ -285,6 +314,10 @@ esp_err_t wifi_analyzer_init(void)
     err = wifi_sta_tracker_init();
     if (err != ESP_OK) return err;
     err = wifi_eapol_tracker_init();
+    if (err != ESP_OK) return err;
+    err = wifi_pmkid_store_init();
+    if (err != ESP_OK) return err;
+    err = wifi_pmkid_writer_init();
     if (err != ESP_OK) return err;
     s_lock = xSemaphoreCreateMutex();
     if (s_lock == NULL) return ESP_ERR_NO_MEM;
@@ -340,6 +373,7 @@ esp_err_t wifi_analyzer_reset(void)
     wifi_ap_tracker_reset();
     wifi_sta_tracker_reset();
     wifi_eapol_tracker_reset();
+    wifi_pmkid_store_reset();
     atomic_store_explicit(&s_pause_requested, false, memory_order_release);
     (void)xSemaphoreGive(s_resume);
     xSemaphoreGive(s_reset_mutex);

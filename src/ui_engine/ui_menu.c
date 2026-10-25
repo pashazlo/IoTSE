@@ -30,6 +30,7 @@ static const menu_item_t wifi_menu[] = {
     {"Air Monitor",  action_wifi_monitor},
     {"Embedded MAP", action_wifi_map},
     {"Export PCAP",  action_wifi_export},
+    {"TX ESP",       action_wifi_tx},
     {"< BACK",       action_back_to_main},
 };
 

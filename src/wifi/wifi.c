@@ -12,6 +12,11 @@
 #include "esp_wifi.h"
 #include "esp_wifi_default.h"
 
+/* Нужен только ради макроса WIFI_PROMISCUOUS_CAPTURE_FCS_FAIL (Фаза 2):
+ * драйверный фильтр и логика callback должны включаться/выключаться синхронно
+ * одним и тем же флагом. */
+#include "wifi_promiscuous.h"
+
 static const char *TAG = "WIFI";
 
 static bool s_netif_initialized;
@@ -582,6 +587,56 @@ esp_err_t wifi_radio_set_mode_promiscuous(
         return err; /* Preserve original failure. Worker detects pending cleanup. */
     }
     s_promiscuous_enabled = true;
+
+    /* Explicitly widen the capture filter. The inherited default observed here
+     * was 0x5 (MGMT|DATA), which silently drops every 802.11 CONTROL frame
+     * (ACK, RTS/CTS, Block-Ack, PS-Poll) — the most numerous frames on a busy
+     * channel. That is why the sniffer appeared to "miss" traffic even with
+     * zero pipeline drops. Include CTRL so control frames reach the rx callback
+     * (which already accepts MGMT/DATA/CTRL). MISC is intentionally left out:
+     * the callback discards it anyway. If a future load problem appears, the
+     * DROP/HWM counters in WIFI_PIPE will show it. */
+    const wifi_promiscuous_filter_t want_filter = {
+        .filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT |
+                       WIFI_PROMIS_FILTER_MASK_CTRL |
+                       WIFI_PROMIS_FILTER_MASK_DATA
+#if WIFI_PROMISCUOUS_CAPTURE_FCS_FAIL
+                       /* Фаза 2 (по умолчанию выключена): просим драйвер отдавать
+                        * и кадры с битым FCS. Без этого бита callback их вообще
+                        * не увидит, и пометка fcs_bad никогда не сработала бы. */
+                       | WIFI_PROMIS_FILTER_MASK_FCSFAIL
+#endif
+                       ,
+    };
+    esp_err_t set_filter_err = esp_wifi_set_promiscuous_filter(&want_filter);
+    if (set_filter_err != ESP_OK) {
+        ESP_LOGW(TAG, "Promiscuous filter set failed: %s (control frames may be missed)",
+                 esp_err_to_name(set_filter_err));
+    }
+
+    /* Promiscuous capture has TWO independent filter stages, and this is the
+     * SECOND one:
+     *   1) the type filter above (esp_wifi_set_promiscuous_filter) decides
+     *      which CLASSES pass — MGMT / CTRL / DATA / MISC;
+     *   2) this control-subtype filter decides which CONTROL subtypes pass once
+     *      the CTRL class is allowed — ACK, RTS, CTS, Block-Ack (BA), BAR,
+     *      PS-Poll, CF-End, etc.
+     * ESP-IDF normally defaults this to "all subtypes", but we set it to ALL
+     * explicitly so capture does not silently depend on a build default — a
+     * non-default sdkconfig or IDF version could otherwise drop, say, ACKs and
+     * leave us guessing again. Belt-and-suspenders: harmless if already ALL.
+     * To later capture only specific subtypes, replace _MASK_ALL with an OR of
+     * the WIFI_PROMIS_CTRL_FILTER_MASK_* bits you want. */
+    const wifi_promiscuous_filter_t want_ctrl_filter = {
+        .filter_mask = WIFI_PROMIS_CTRL_FILTER_MASK_ALL,
+    };
+    esp_err_t set_ctrl_filter_err =
+        esp_wifi_set_promiscuous_ctrl_filter(&want_ctrl_filter);
+    if (set_ctrl_filter_err != ESP_OK) {
+        ESP_LOGW(TAG, "Promiscuous ctrl-subtype filter set failed: %s",
+                 esp_err_to_name(set_ctrl_filter_err));
+    }
+
     wifi_promiscuous_filter_t filter;
     esp_err_t filter_err = esp_wifi_get_promiscuous_filter(&filter);
     if (filter_err == ESP_OK) {

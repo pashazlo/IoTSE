@@ -16,13 +16,62 @@ extern "C" {
 #define WIFI_PROMISCUOUS_FCS_LEN 4U
 #define WIFI_PROMISCUOUS_CAPTURE_MAX_LEN \
     (WIFI_PROMISCUOUS_DRIVER_MAX_LEN - WIFI_PROMISCUOUS_FCS_LEN)
-#define WIFI_PROMISCUOUS_POOL_SLOTS 32U
+/* Число слотов пула приёма promiscuous. Каждый слот — это ingress_slot_t
+ * размером 4112 байт (payload до 4091 байт + метаданные), и ВЕСЬ пул лежит
+ * в PSRAM (см. heap_caps_calloc с MALLOC_CAP_SPIRAM в wifi_promiscuous.c).
+ *
+ * Зачем поднимаем 32 -> 64: это очередь между коротким callback драйвера Wi-Fi
+ * и задачей-анализатором. Если анализатор на мгновение не успевает разгрести
+ * пул, callback не находит свободный слот и инкрементит dropped_full (в логе
+ * WIFI_PIPE это DROP ... FULL=..). Больше слотов = длиннее буфер всплесков
+ * трафика = меньше FULL-потерь. Это дополняет драйверные RX-буферы из Фазы 3:
+ * Фаза 3 ловит потери ДО callback, этот пул — потери ПОСЛЕ callback.
+ *
+ * Бюджет PSRAM (на плате свободно ~7 МБ, так что запас огромный):
+ *   32 слота  -> 32 * 4112  = 131 584 байта (~128 КБ);
+ *   64 слота  -> 64 * 4112  = 263 168 байт  (~257 КБ);  <-- сейчас
+ *   128 слотов-> 128 * 4112 = 526 336 байт  (~514 КБ).
+ *
+ * ЖЁСТКИЙ ПОТОЛОК: индекс слота хранится и передаётся ТОЛЬКО как uint8_t —
+ * в поле wifi_raw_packet_t.ingress_slot, как элемент обеих FreeRTOS-очередей
+ * (xQueueCreate(..., sizeof(uint8_t))) и как счётчик цикла заполнения free
+ * queue (for (uint8_t i = ...)). uint8_t вмещает 0..255, поэтому POOL_SLOTS
+ * НЕ ДОЛЖЕН превышать 256; при 256 счётчик цикла никогда не достигнет границы
+ * и зациклится. Значения 64 и 128 полностью безопасны. Если на плате при
+ * нагрузке FULL всё ещё растёт — следующий шаг 64 -> 128 (просто PSRAM). */
+#define WIFI_PROMISCUOUS_POOL_SLOTS 64U
+/* Глубина ready-очереди повторяет число слотов: больше одного слота на кадр
+ * в очереди всё равно не бывает, поэтому обе величины связаны одним макросом. */
 #define WIFI_PROMISCUOUS_QUEUE_LEN WIFI_PROMISCUOUS_POOL_SLOTS
 
 /* Temporary, counter-only AP/STA path diagnostics. This never filters frames.
  * Set to 0 for normal builds after the hardware capture investigation. */
 #ifndef WIFI_PROMISCUOUS_TARGET_DIAGNOSTICS
 #define WIFI_PROMISCUOUS_TARGET_DIAGNOSTICS 1
+#endif
+
+/* Фаза 2: захват кадров с НЕВЕРНОЙ контрольной суммой (bad FCS).
+ *
+ * По умолчанию ВЫКЛЮЧЕНО (0) — нормальная сборка ведёт себя ровно как раньше:
+ * кадр с rx_ctrl.rx_state != 0 отбраковывается как invalid в callback, а в
+ * драйверный promiscuous-фильтр бит FCSFAIL не добавляется.
+ *
+ * При включении (1) происходит ДВА согласованных изменения:
+ *   1) в wifi.c в маску esp_wifi_set_promiscuous_filter добавляется
+ *      WIFI_PROMIS_FILTER_MASK_FCSFAIL, иначе драйвер просто не отдаст такие
+ *      кадры в callback, и флаг ниже всегда был бы false;
+ *   2) в wifi_promiscuous_rx_cb кадр с rx_state != 0 НЕ выбрасывается, а
+ *      помечается полем fcs_bad = true и проходит дальше по конвейеру.
+ *
+ * Зачем: на зашумлённом канале или слабом RSSI часть кадров приходит с битым
+ * FCS. Иногда их полезно видеть (анализ помех, восстановление частично
+ * повреждённых рукопожатий). Но это «грязные» данные: содержимое может быть
+ * искажено, поэтому потребители (EAPOL-парсер, классификатор) при желании
+ * должны пропускать кадры с fcs_bad == true. Длина/границы buffer'а при этом
+ * по-прежнему строго проверяются (см. oversize-guard в callback), так что
+ * битый FCS не создаёт выхода за пределы памяти. */
+#ifndef WIFI_PROMISCUOUS_CAPTURE_FCS_FAIL
+#define WIFI_PROMISCUOUS_CAPTURE_FCS_FAIL 0
 #endif
 
 typedef enum {
@@ -41,6 +90,10 @@ typedef struct {
     uint8_t mcs;
     bool bandwidth_40mhz;
     bool short_gi;
+    /* true, если кадр пришёл с битым FCS (только при включённом
+     * WIFI_PROMISCUOUS_CAPTURE_FCS_FAIL; иначе всегда false). «Грязный» кадр —
+     * содержимое может быть искажено. */
+    bool fcs_bad;
     wifi_promiscuous_pkt_type_t type;
     wifi_target_diag_kind_t target_diag;
     const uint8_t *payload;

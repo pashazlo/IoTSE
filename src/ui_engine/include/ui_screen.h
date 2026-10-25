@@ -15,6 +15,7 @@ typedef enum {
     UI_SCREEN_WIFI_MONITOR,
     UI_SCREEN_WIFI_MAP,
     UI_SCREEN_WIFI_EXPORT,
+    UI_SCREEN_WIFI_TX,        // настройки пакета (Wi-Fi → TX ESP)
     UI_SCREEN_SETTINGS_MENU,
     UI_SCREEN_FILE_VOLUMES,   // выбор тома: Internal / SD Card
     UI_SCREEN_FILE_BROWSER,   // список файлов/папок текущей директории
@@ -30,6 +31,7 @@ void action_wifi_connect(void);
 void action_wifi_monitor(void);
 void action_wifi_map(void);
 void action_wifi_export(void);
+void action_wifi_tx(void);
 void action_settings(void);
 
 /**

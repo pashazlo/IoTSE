@@ -68,6 +68,7 @@ typedef struct {
     uint32_t ring_high_water_records;
     uint32_t overwritten_records;
     uint32_t overwritten_bytes;
+    uint32_t eapol_evicted;
     uint32_t dropped_busy;
     uint32_t dropped_frozen;
     uint32_t dropped_oversize;

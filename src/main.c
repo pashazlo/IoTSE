@@ -9,7 +9,12 @@
 #include "wifi_port_scan.h"
 #include "wifi_analyzer.h"
 #include "wifi_worker.h"
+#include "tx_config.h"
+#include "subghz_hal_cc1101.h"
+#include "subghz_rmt_raw.h"
 #include "esp_log.h"
+#include "nvs.h"           /* ESP_ERR_NVS_NOT_FOUND при разборе результата tx_config_load */
+#include "driver/gpio.h"   /* для парковки CSN/CE чужого nRF24 на общей SPI3 */
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -112,6 +117,19 @@ void app_main(void)
     }
 
     ESP_LOGI(TAG, "✓ NVS инициализирован");
+
+    /* Поднимаем сохранённые настройки TX (SSID/Reason/Burst/Channel) поверх
+     * дефолтов. Если записи ещё нет или она не прошла проверку — остаёмся на
+     * дефолтах, это не фатально, поэтому не прерываем запуск. */
+    err = tx_config_load();
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "✓ Настройки TX загружены из NVS");
+    } else if (err == ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGI(TAG, "Настройки TX не найдены — дефолты");
+    } else {
+        ESP_LOGW(TAG, "Настройки TX не загружены: %s (дефолты)",
+                 esp_err_to_name(err));
+    }
 
     ESP_LOGI(TAG, "Монтирование FAT-раздела...");
 
@@ -239,6 +257,52 @@ void app_main(void)
     }
 
     ESP_LOGI(TAG, "✓ Шина SPI инициализирована");
+
+    // ------------------------------------------------------------------
+    // Парковка nRF24 на общей шине SPI3.
+    // nRF24 физически сидит на тех же SCK/MOSI/MISO, что и CC1101, но драйвера
+    // у него в прошивке нет — значит его CSN никто не уводит в неактив. Пока
+    // CSN в 0/висит, nRF24 ТОЖЕ тянет общий MISO и портит чтения CC1101
+    // (self-test падал: VERSION и дамп регистров читались искажённо, т.к. два
+    // slave дрались за MISO). Полный драйвер тут не нужен — достаточно увести
+    // чип в неактив ДО первого обмена по SPI3: CSN=1 (деселект => отпускает
+    // MISO), CE=0 (standby). Делаем это перед boot_probe.
+    const int nrf24_csn_gpio = 14;
+    const int nrf24_ce_gpio = 21;
+    const gpio_config_t nrf24_park_cfg = {
+        .pin_bit_mask = (1ULL << nrf24_csn_gpio) | (1ULL << nrf24_ce_gpio),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    esp_err_t nrf24_park_err = gpio_config(&nrf24_park_cfg);
+    if (nrf24_park_err != ESP_OK) {
+        ESP_LOGW(TAG, "nRF24 park: gpio_config failed: %s", esp_err_to_name(nrf24_park_err));
+    } else {
+        gpio_set_level(nrf24_csn_gpio, 1);  // деселект nRF24 — отпускает общий MISO
+        gpio_set_level(nrf24_ce_gpio, 0);   // standby
+        ESP_LOGI(TAG, "nRF24 parked on shared SPI3: CSN(IO%d)=1, CE(IO%d)=0",
+                 nrf24_csn_gpio, nrf24_ce_gpio);
+    }
+
+    // CC1101 presence probe: логирует карту пинов и результат self-check.
+    // Fail-soft: без настроенных пинов или без модуля загрузка продолжается.
+    err = subghz_cc1101_boot_probe();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "CC1101 недоступен: %s (Sub-GHz отключён; остальные функции продолжают запуск)",
+                 esp_err_to_name(err));
+    } else {
+        // Self-test прошёл: запускаем record-режим raw capture на GDO0
+        // (433.92 MHz): жмёшь брелок — в лог идёт полный дамп сырых
+        // длительностей каждого кадра. Это первый этап
+        // subghz_rmt_transport, UI и выбор режима подключим позже.
+        err = subghz_rmt_raw_record_start(433920000);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "CC1101 raw record не запущен: %s (остальные функции продолжают запуск)",
+                     esp_err_to_name(err));
+        }
+    }
 
     // ========================================================================
     // 2. Buttons

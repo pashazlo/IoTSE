@@ -11,6 +11,7 @@
 #include "ui_wifi_monitor.h"
 #include "ui_wifi_map.h"
 #include "ui_wifi_export.h"
+#include "ui_wifi_tx.h"
 #include "ui_wifi.h"
 #include "ui_popup.h"
 #include "ui_file_editor.h"
@@ -115,6 +116,9 @@ bool ui_render_needs_tick(void)
     }
     if (ui_screen_get() == UI_SCREEN_WIFI_EXPORT) {
         return s_cursor.animating || ui_wifi_export_needs_tick();
+    }
+    if (ui_screen_get() == UI_SCREEN_WIFI_TX) {
+        return s_cursor.animating || ui_wifi_tx_needs_tick();
     }
     if (ui_screen_get() == UI_SCREEN_WIFI_MAP) {
         return s_cursor.animating || ui_wifi_map_needs_tick();
@@ -572,6 +576,10 @@ void ui_render(gfx_canvas_t *canvas)
 
         case UI_SCREEN_WIFI_EXPORT:
             ui_wifi_export_draw(canvas, &s_cursor);
+            break;
+
+        case UI_SCREEN_WIFI_TX:
+            ui_wifi_tx_draw(canvas, &s_cursor);
             break;
 
         default: {

@@ -5,6 +5,7 @@
 #include "ui_wifi_monitor.h"
 #include "ui_wifi_map.h"
 #include "ui_wifi_export.h"
+#include "ui_wifi_tx.h"
 
 static const char *TAG = "UI_SCREEN";
 
@@ -69,6 +70,11 @@ void action_wifi_map(void)
 void action_wifi_export(void)
 {
     ui_wifi_export_open();
+}
+
+void action_wifi_tx(void)
+{
+    ui_wifi_tx_open();
 }
 
 void action_settings(void)

@@ -13,6 +13,7 @@
 #include "ui_wifi_monitor.h"
 #include "ui_wifi_map.h"
 #include "ui_wifi_export.h"
+#include "ui_wifi_tx.h"
 #include "ui_wifi.h"
 #include "wifi_worker.h"
 
@@ -397,6 +398,8 @@ void ui_controller_handle_event(
                 ui_file_editor_handle_keyboard_result();
             } else if (ui_screen_get() == UI_SCREEN_WIFI_NETWORKS) {
                 ui_wifi_connect_handle_keyboard_result();
+            } else if (ui_screen_get() == UI_SCREEN_WIFI_TX) {
+                ui_wifi_tx_handle_keyboard_result();
             } else {
                 handle_keyboard_result();
             }
@@ -443,6 +446,10 @@ void ui_controller_handle_event(
 
         case UI_SCREEN_WIFI_EXPORT:
             ui_wifi_export_handle_event(evt, canvas);
+            return;
+
+        case UI_SCREEN_WIFI_TX:
+            ui_wifi_tx_handle_event(evt, canvas);
             return;
 
         default:
